@@ -25,7 +25,6 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/State
 import { useTheme } from '../../src/theme/useTheme';
 import { prettyPhone, shortTime } from '../../src/utils/format';
 
-/** The conversation. Mirrors the web chat: bubbles, delivery method, send box. */
 export default function ChatScreen() {
   const { colors, type, space, radius } = useTheme();
   const navigation = useNavigation();

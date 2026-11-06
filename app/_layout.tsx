@@ -6,15 +6,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LoadingState } from '../src/components/StateView';
 import { useAuthStore } from '../src/stores/authStore';
+import { useThemeStore } from '../src/stores/themeStore';
 import { useTheme } from '../src/theme/useTheme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Phones lose connectivity often enough that one retry is worth it.
       retry: 1,
       staleTime: 30_000,
-      // RN has no window focus; refetching on it would never fire anyway.
       refetchOnWindowFocus: false,
     },
   },
@@ -44,25 +43,32 @@ function useAuthGuard() {
 
 export default function RootLayout() {
   const { colors, dark } = useTheme();
-  const hydrate = useAuthStore((s) => s.hydrate);
-  const hydrated = useAuthStore((s) => s.hydrated);
+  const hydrateAuth = useAuthStore((s) => s.hydrate);
+  const authReady = useAuthStore((s) => s.hydrated);
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
+  const themeReady = useThemeStore((s) => s.hydrated);
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
     if (!started) {
       setStarted(true);
-      void hydrate();
+      void hydrateAuth();
+      void hydrateTheme();
     }
-  }, [started, hydrate]);
+  }, [started, hydrateAuth, hydrateTheme]);
 
   useAuthGuard();
+
+  // Both stores must be read before the first paint, otherwise the app flashes
+  // the signed-out screen or the wrong appearance on every cold start.
+  const ready = authReady && themeReady;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style={dark ? 'light' : 'dark'} />
-          {hydrated ? (
+          {ready ? (
             <Stack
               screenOptions={{
                 headerStyle: { backgroundColor: colors.bg2 },

@@ -1,7 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/home.ts. Keep the two in step. */
-
 export type LineHealth = 'healthy' | 'attention' | 'offline';
 
 export interface HomeSetup {

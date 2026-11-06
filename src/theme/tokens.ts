@@ -1,8 +1,4 @@
-/**
- * Design tokens, ported from spyder-web/src/styles/tokens.css so the two
- * clients stay visually identical. Keep the values in sync by hand: there is
- * no shared package across the two repos.
- */
+/** Design tokens, matching spyder-web/src/styles/tokens.css. */
 
 export interface Palette {
   bg: string;
@@ -90,6 +86,16 @@ export const darkPalette: Palette = {
   bubbleIn: '#2C2C2E',
   sms: '#1A7F37',
 };
+
+/**
+ * Brand colours, sampled from the Solvedblue logo artwork. These are fixed and
+ * do not change with the theme: the wordmark is navy "Solved" plus blue "blue"
+ * on both light and dark surfaces, the same split the web Wordmark uses.
+ */
+export const brand = {
+  navy: '#0B1630',
+  blue: '#1A7BFF',
+} as const;
 
 /** The web type ramp, as React Native text styles. */
 export const type = {

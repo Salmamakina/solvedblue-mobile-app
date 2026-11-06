@@ -17,7 +17,6 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/State
 import { useTheme } from '../../src/theme/useTheme';
 import { prettyPhone, shortTime } from '../../src/utils/format';
 
-/** Mirrors the web Contacts list: filter chips, search, tap to the conversation. */
 export default function ContactsScreen() {
   const { colors, type, space, radius } = useTheme();
   const router = useRouter();

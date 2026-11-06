@@ -8,7 +8,6 @@ interface CardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** The web app's card surface: bg2 on bg, hairline border, soft radius. */
 export function Card({ children, title, style }: CardProps) {
   const { colors, type, radius, space } = useTheme();
 

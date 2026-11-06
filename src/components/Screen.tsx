@@ -10,7 +10,6 @@ interface ScreenProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** The page background and the safe-area padding every screen needs. */
 export function Screen({ children, edgeToEdge = false, style }: ScreenProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();

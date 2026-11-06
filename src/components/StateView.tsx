@@ -2,8 +2,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/useTheme';
 import { Button } from './Button';
 
-/** The three states every list screen needs: loading, failed, empty. */
-
 export function LoadingState({ label = 'Loading' }: { label?: string }) {
   const { colors, type, space } = useTheme();
   return (

@@ -9,11 +9,6 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/State
 import { useTheme } from '../../src/theme/useTheme';
 import { shortTime } from '../../src/utils/format';
 
-/**
- * Read-only campaign list. Authoring stays on web for now: the create payload
- * has 20+ fields (effects, throttles, schedules) and does not belong on a phone
- * until the mobile flow is designed.
- */
 export default function CampaignsScreen() {
   const { colors, type, space } = useTheme();
 

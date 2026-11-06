@@ -1,7 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/inbox.ts. Keep the two in step. */
-
 export type InboxFolder = 'needs_reply' | 'mine' | 'all' | 'closed' | 'flagged';
 
 export interface InboxThread {

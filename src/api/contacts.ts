@@ -1,7 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/contacts.ts (read and light edits; import stays web-only). */
-
 export type ContactSource = 'manual' | 'file' | 'google_sheet' | 'inbox' | 'send' | 'campaign';
 export type ContactFilter = 'all' | 'flagged' | 'opted_out';
 

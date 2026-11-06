@@ -2,10 +2,8 @@ import { RefreshControl } from 'react-native';
 import { useTheme } from '../theme/useTheme';
 
 /**
- * Pull-to-refresh wired to a react-query refetch.
- *
- * RefreshControl's onRefresh must return void, while refetch returns a promise
- * of the query result. Discarding it here keeps every call site tidy.
+ * Pull-to-refresh wired to a react-query refetch. RefreshControl's onRefresh
+ * must return void, while refetch returns a promise of the query result.
  */
 export function Refresh({
   refreshing,

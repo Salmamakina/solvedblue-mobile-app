@@ -1,8 +1,6 @@
 import api from './client';
 import type { LineHealth } from './home';
 
-/** Mirrors spyder-web/src/api/lines.ts. */
-
 export interface LineEntry {
   id: string;
   name: string;

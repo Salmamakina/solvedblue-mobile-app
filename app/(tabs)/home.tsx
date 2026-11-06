@@ -11,7 +11,6 @@ import { ErrorState, LoadingState } from '../../src/components/StateView';
 import { useTheme } from '../../src/theme/useTheme';
 import { percent, shortTime, threadTitle } from '../../src/utils/format';
 
-/** Mirrors the web Home: health, today's numbers, lines, waiting replies, campaigns. */
 export default function HomeScreen() {
   const { colors, type, space } = useTheme();
   const router = useRouter();

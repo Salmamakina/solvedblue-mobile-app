@@ -1,7 +1,5 @@
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, isToday } from 'date-fns';
 
-/** Shared formatting, so the inbox, home and chat label things the same way. */
-
 /** "4:21 PM" today, "Tue" this week, "14 Mar" beyond. Empty string for no date. */
 export function shortTime(value: string | null | undefined): string {
   if (!value) return '';

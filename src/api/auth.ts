@@ -1,12 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/auth.ts. Keep the two in step. */
-
-export interface LoginData {
-  email: string;
-  password: string;
-}
-
 export interface AuthResponse {
   token: string;
   user: { id: string; email: string; organization_id?: string | null };
@@ -30,7 +23,7 @@ export interface MeUser {
 }
 
 export const authApi = {
-  login: (data: LoginData) => api.post<AuthResponse>('/auth/login', data),
+  /** Exchanges a Google identity token for the backend's own JWT. */
   loginWithFirebase: (firebaseToken: string) =>
     api.post<AuthResponse>('/auth/firebase', { firebaseToken }),
   getMe: () => api.get<{ user: MeUser; pending_invite?: PendingInvite | null }>('/auth/me'),

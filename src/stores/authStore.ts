@@ -1,18 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
-/**
- * Mobile port of spyder-web/src/stores/authStore.ts.
- *
- * The web store reads localStorage synchronously at creation. SecureStore is
- * async, so the token cannot be known at first render: `hydrated` tells the root
- * layout whether "no token" means signed out or simply not loaded yet. Without
- * it the app flashes the sign-in screen on every cold start.
- *
- * SecureStore is used rather than AsyncStorage because this is a bearer token:
- * it lands in the iOS Keychain and Android Keystore instead of plain app storage.
- */
-
 const TOKEN_KEY = 'spyder-token';
 const USER_KEY = 'spyder-user';
 
@@ -51,9 +39,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: rawUser ? (JSON.parse(rawUser) as AuthUser) : null,
         hydrated: true,
       });
-    } catch (error) {
+    } catch {
       // A corrupt or unreadable store must not wedge the app on the splash screen.
-      console.warn('Could not restore the stored session:', error);
       set({ token: null, user: null, hydrated: true });
     }
   },

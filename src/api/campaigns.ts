@@ -1,7 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/campaigns.ts (read, start, end; authoring stays web-only for now). */
-
 export interface Campaign {
   id: string;
   user_id: string;

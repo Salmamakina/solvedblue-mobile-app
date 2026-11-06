@@ -2,29 +2,9 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { useAuthStore } from '../stores/authStore';
 
-/**
- * Mobile port of spyder-web/src/api/client.ts.
- *
- * Differences from the web client, all forced by the platform:
- *  - the base URL comes from EXPO_PUBLIC_API_URL, not import.meta.env, and there
- *    is no dev proxy to fall back on, so a mobile build always needs a full URL;
- *  - the token is read from the store synchronously, but the store hydrates from
- *    SecureStore (async) rather than localStorage;
- *  - a 401 cannot redirect with window.location. It clears the session and the
- *    root layout's guard moves to the sign-in screen.
- *
- * The backend accepts this unchanged: authenticateToken takes either a JWT or a
- * Firebase ID token on `Authorization: Bearer`, and its CORS allows requests
- * with no Origin header, which is every native request.
- */
-
 const configuredUrl =
   process.env.EXPO_PUBLIC_API_URL ??
   (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
-
-if (!configuredUrl) {
-  console.error('EXPO_PUBLIC_API_URL is not set. Copy .env.example to .env and point it at the backend.');
-}
 
 /** Trailing slashes would produce //api, which some proxies treat as a different route. */
 export const apiBaseUrl = `${(configuredUrl ?? '').replace(/\/+$/, '')}/api`;
@@ -32,7 +12,6 @@ export const apiBaseUrl = `${(configuredUrl ?? '').replace(/\/+$/, '')}/api`;
 const api = axios.create({
   baseURL: apiBaseUrl,
   headers: { 'Content-Type': 'application/json' },
-  // Longer than the web's 10s: phones drop onto mobile data mid-request.
   timeout: 20000,
 });
 

@@ -17,7 +17,6 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/State
 import { useTheme } from '../../src/theme/useTheme';
 import { shortTime, threadTitle } from '../../src/utils/format';
 
-/** Mirrors the web Inbox: folder tabs, thread list, tap into the conversation. */
 export default function InboxScreen() {
   const { colors, type, space, radius } = useTheme();
   const router = useRouter();

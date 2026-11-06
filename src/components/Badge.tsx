@@ -33,14 +33,12 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone 
   );
 }
 
-/** The line health vocabulary the web app uses. */
 export function healthTone(health: LineHealth): Tone {
   if (health === 'healthy') return 'good';
   if (health === 'attention') return 'warn';
   return 'bad';
 }
 
-/** Campaign status colours, matching the web badges. */
 export function campaignTone(status: string): Tone {
   if (status === 'active') return 'good';
   if (status === 'scheduled') return 'info';

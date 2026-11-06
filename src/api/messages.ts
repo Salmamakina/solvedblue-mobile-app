@@ -1,7 +1,5 @@
 import api from './client';
 
-/** Mirrors spyder-web/src/api/messages.ts. Keep the two in step. */
-
 export interface MessageReaction {
   id: string;
   message_id: string;
