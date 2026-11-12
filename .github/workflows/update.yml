@@ -5,10 +5,15 @@
 # one thing in this pipeline with a real footgun, so the two channels are
 # treated differently:
 #
-#   preview     published automatically on every push to `staging`. Internal
-#               distribution and TestFlight only, so the audience is the team.
+#   staging     published automatically on every push to the `staging` branch.
+#               Reaches TestFlight and the Play internal track, so the audience
+#               is the team.
 #   production  manual, because this reaches customers in seconds and there is
 #               no review in the way.
+#
+# A channel name here must match the `channel` of the build profile it is meant
+# to reach (eas.json). Publish to a channel no build listens on and the update
+# goes nowhere, silently.
 #
 # This mirrors the backend monorepo: pushing to `staging` ships staging, and
 # production is an explicit, dated act rather than a branch head moving.
@@ -31,15 +36,15 @@ on:
         description: 'Channel to publish to'
         type: choice
         required: true
-        default: preview
-        options: [preview, production]
+        default: staging
+        options: [staging, preview, production]
       message:
         description: 'Update message (defaults to the commit subject)'
         type: string
         required: false
 
 concurrency:
-  group: update-${{ inputs.channel || 'preview' }}
+  group: update-${{ inputs.channel || 'staging' }}
   cancel-in-progress: false
 
 permissions:
@@ -72,6 +77,10 @@ jobs:
     # `staging`, for a step that cannot work until an account exists, trains
     # people to ignore red crosses.
     if: needs.guard.outputs.configured == 'true'
+    # The channel name must match the `channel` of the build profile the update
+    # is meant to reach, or it publishes into a void. `staging` here lines up
+    # with the `staging` build profile in eas.json, which is what TestFlight and
+    # the Play internal track run.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -108,6 +117,8 @@ jobs:
           MESSAGE: ${{ inputs.message }}
         run: |
           set -euo pipefail
+          # `staging` and `preview` are both the staging backend; only
+          # `production` points at production.
           if [ "$CHANNEL" = 'production' ]; then
             export EXPO_PUBLIC_API_URL='https://solvedblue.com'
           else
