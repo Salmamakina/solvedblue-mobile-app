@@ -549,10 +549,32 @@ documentation recommends `npx expo customize tsconfig.json` for exactly this
 purpose on CI, and on SDK 58 **it does not regenerate either file** — tested by
 deleting both and running it. `expo export` is the only thing that works.
 
-`expo-doctor` is a separate job with `continue-on-error` and a 10-minute cap. It
-reaches out to the npm and Expo registries, so it is slow and fails for reasons
-unrelated to the commit under test; it ran over 15 minutes locally without
-finishing. Promote it into `check` once someone works out why.
+`expo-doctor` is a separate job with `continue-on-error` and a 10-minute cap,
+and it **must stay advisory**. It compares installed packages against the newest
+patch releases in the registries, and Expo ships patches most weeks, so it goes
+red on its own with no commit involved. Gating merges on that teaches people to
+ignore red crosses.
+
+> **The "15 minute hang" is solved: it was never slow.** `npx expo-doctor` stops
+> to ask *"Need to install expo-doctor@x. Ok to proceed?"* and waits for a
+> keypress. CI only got away with it because npx auto-confirms when stdout is
+> not a TTY. The workflow now runs `npx --yes expo-doctor`, and locally that
+> finishes in seconds.
+
+**It paid for itself on the first CI run**, catching three things that tsc, lint
+and the bundler are all blind to:
+
+1. **`react-native-worklets` was missing**, a required peer of
+   react-native-reanimated 4.x. Expo's own warning: *"Your app may crash outside
+   of Expo Go without this dependency."* That is every real build — exactly the
+   development build being prepared. The most valuable find of the three.
+2. **`newArchEnabled` is no longer in the SDK 58 schema.** The new architecture
+   is the default; the field is now rejected.
+3. **Top-level `splash` is no longer in the schema either.** It moved into the
+   `expo-splash-screen` plugin's options, which is where it now lives.
+
+Plus 15 packages a patch version behind, fixed with `npx expo install --fix`.
+`expo-doctor` is now **18/18, no issues**.
 
 ### P6.2 Build and submit — **written, needs the token**
 

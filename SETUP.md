@@ -5,12 +5,16 @@ a browser or a paid account, it says so.
 
 **Where to run each part:**
 
-| Part | Machine |
-| --- | --- |
-| 1–3 GitHub, secrets, branches | Windows (this machine) |
-| 4–6 Mac mini setup and running iOS | Mac mini |
-| 7 TestFlight | Mac mini + App Store Connect |
-| 8 Deployment | either |
+| Part | Machine | Required? |
+| --- | --- | --- |
+| 1–3 GitHub, secrets, branches | Windows | **yes** |
+| 4–6 Mac, iOS Simulator, Android on Mac | a **non-fleet** Mac | **no — skip it** |
+| 7 TestFlight | Windows + an iPhone | yes, for iOS testing |
+| 8 Deployment | Windows | **yes** |
+
+**You do not need a Mac.** Expo builds and submits iOS from Windows. Parts 4–6
+only buy you the iOS Simulator, and if your only Mac mini runs `spyder-relay`,
+do not touch it — see the warning in Part 4.
 
 ---
 
@@ -147,44 +151,189 @@ false-positive warning about `axios.create`), bundle builds at 5.5 MB.
 
 ---
 
-# Part 4 — Prepare the Mac mini
+# Part 4 — Prepare a Mac (OPTIONAL — skip this)
 
-> **Do not use a Mac mini that is in the relay fleet.** In this system a Mac
-> mini *is* sending hardware — it has a customer's Apple ID signed into Messages
-> and runs `spyder-relay`. Installing Xcode or rebooting it takes that
-> customer's iMessage line offline. Use a spare or unassigned one. If unsure,
-> check whether its `devices` row has an `apple_id` and an `organization_id`.
+## You do not need a Mac to ship iOS
 
-### 4.1 Install Xcode
+Read this before buying or borrowing anything. The entire iOS pipeline runs from
+Windows:
 
-Mac App Store → **Xcode** → Install. It is 7+ GB, so start it first and let it
-run. Then once:
+| Task | Needs a Mac? |
+| --- | --- |
+| `eas build --platform ios` | **No.** It builds on Expo's macOS machines |
+| `eas submit` / `--auto-submit` to App Store Connect | **No.** Expo Submit runs on Windows |
+| TestFlight testing | **No.** Testers use an iPhone |
+| App Store review and release | **No.** Browser only |
+| iOS **Simulator** | Yes — this is the only thing |
+
+A Mac buys you one thing: the Simulator, for looking at the iOS app without a
+physical iPhone. And in the Simulator you still **cannot** test Apple sign-in
+(needs the paid account) or push notifications (needs a real device).
+
+So the Simulator gets you: the UI, and Google sign-in on iOS. Useful, but not
+worth disturbing production hardware for.
+
+> ## Using a relay Mac mini as a dev machine
+>
+> A Mac mini in this system *is* sending hardware: it has an Apple ID signed
+> into Messages and relays iMessages. The backend watches it —
+> `services/fleetMinute.ts` raises `mac_offline` when it stops reporting and
+> `apple_id_signed_out` when Messages loses its Apple ID.
+>
+> **A production relay Mac: don't.** A customer's line goes down and someone
+> gets paged.
+>
+> **A staging relay Mac: acceptable**, with three precautions.
+>
+> 1. **Enable automatic login before rebooting.** System Settings → Users &
+>    Groups → Automatic login. The relay is a *GUI* LaunchAgent
+>    (`launchctl bootstrap gui/$UID`, `RunAtLoad` + `KeepAlive`), so it restarts
+>    on **login**, not at boot. Without auto-login the Mac returns to a login
+>    screen and the relay stays down until someone signs in.
+> 2. **Never touch System Settings → Apple ID.** That is the account Messages
+>    sends with. Xcode's own account (Xcode → Settings → Accounts) is a
+>    different thing entirely and is safe to sign into — it does not affect
+>    Messages.
+> 3. Expect the Mac to be busy while the Simulator and Metro are running. The
+>    relay is a light Node HTTP server and copes, but a low-RAM Mac will feel it.
+>
+> The cost is one-time: the Xcode install and one reboot. Running the Simulator
+> afterwards has no effect on the relay.
+>
+> **TestFlight does not involve this Mac at all** — that runs on an iPhone, and
+> the builds happen on Expo's servers. Only the Simulator needs the Mac.
+
+### Check which kind of Mac you have
+
+Before starting, confirm it is not serving a paying customer. In the admin
+console under Lines, or directly:
+
+```sql
+SELECT name, organization_id, apple_id IS NOT NULL AS signed_in, status
+FROM devices WHERE platform = 'macos';
+```
+
+A row with an `organization_id` belonging to a real customer is production —
+leave it alone. A staging or unassigned Mac is fine to use.
+
+### 4.1 Check what is already there
+
+Run this first. It tells you which of the next steps you can skip.
 
 ```bash
+echo "--- Xcode ---";      xcodebuild -version 2>/dev/null || echo "NOT INSTALLED"
+echo "--- selected ---";   xcode-select -p
+echo "--- simulators ---"; xcrun simctl list runtimes | grep -i ios || echo "NO iOS RUNTIME"
+echo "--- node ---";       node --version 2>/dev/null || echo "NOT INSTALLED"
+echo "--- git ---";        git --version 2>/dev/null || echo "NOT INSTALLED"
+echo "--- eas ---";        eas --version 2>/dev/null || echo "NOT INSTALLED"
+echo "--- brew ---";       brew --version 2>/dev/null | head -1 || echo "NOT INSTALLED"
+```
+
+### 4.2 Xcode
+
+**If `xcodebuild -version` printed a version, Xcode is installed — skip the
+download and the reboot.** You only need the Simulator, not the build
+toolchain, because the real builds happen on Expo's servers.
+
+Three things still to confirm:
+
+```bash
+# 1. xcode-select must point at Xcode, not the bare command line tools.
+#    If it prints /Library/Developer/CommandLineTools, fix it:
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# 2. Licence accepted (silent no-op if it already is)
 sudo xcodebuild -license accept
-xcodebuild -runFirstLaunch
+
+# 3. An iOS simulator runtime must exist. Xcode 15+ downloads these
+#    separately from Xcode itself, so "Xcode installed" does not imply it.
+xcrun simctl list runtimes | grep -i ios
 ```
 
-You need Xcode only for the **iOS Simulator** — the actual app builds happen on
-Expo's servers, so you do not need the full local build toolchain.
-
-### 4.2 Install the tools
+If that last command prints nothing, get a runtime (a few GB, **no reboot**):
 
 ```bash
-# Homebrew, if not already there
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+xcodebuild -downloadPlatform iOS
+```
 
-brew install node@22 git
+Or in the UI: Xcode → Settings → Components (or Platforms) → iOS → Get.
+
+**If Xcode is not installed:** Mac App Store → Xcode → Install (7+ GB). Then
+run the three commands above. This is the only step that may want a reboot — do
+Part 4.4 first if so.
+
+### 4.3 Install Node and the EAS CLI
+
+Expo 58 needs Node `^22.13 || ^24.3 || ^26 || >=27`. Note the gap: **25.x is not
+supported**, and `brew install node` gives you whatever is latest.
+
+Use a version manager rather than Homebrew's `node`. It pins the version and
+pulls official prebuilt binaries, which avoids Homebrew's dependency graph:
+
+```bash
+brew install fnm
+echo 'eval "$(fnm env --use-on-cd --shell zsh)"' >> ~/.zshrc
+source ~/.zshrc
+
+fnm install 22
+fnm default 22
+fnm use 22
+
+node --version        # v22.x
 npm install -g eas-cli
+eas --version
 ```
 
-Check the version — Expo 58 needs Node 22, 24, or 26+:
+Nothing here needs `sudo`.
+
+> **If `node --version` aborts with `Library not loaded: libsimdjson.*.dylib`,**
+> Homebrew's `node` is linked against a `simdjson` version that is no longer
+> installed — a broken formula after an upgrade, not a missing Node. Seen in the
+> wild with node 25.8.2 against simdjson 5.1.1.
+>
+> Do not repair it; 25.x is outside Expo's supported range anyway. `fnm`
+> prepends to `PATH` and wins over it. To clear it out:
+> `brew uninstall node`, or `brew reinstall simdjson` if something else needs it.
+
+### 4.3b Confirm the Simulator opens
+
+Worth 30 seconds before a 15-minute build:
 
 ```bash
-node --version
+open -a Simulator
 ```
 
-### 4.3 Clone the repo
+A phone window should appear. If it asks for an **admin password**, Xcode's
+first-run components were never installed and you will need it from whoever set
+the Mac up. That is the only step in this part that can require admin, and if a
+runtime is already listed it usually does not.
+
+### 4.4 Only if you must reboot — enable automatic login first
+
+**Skip this if Xcode was already installed and you are not rebooting.**
+
+System Settings → Users & Groups → **Automatic login** → select the relay user.
+
+The relay is a GUI LaunchAgent, so it restarts on **login**, not at boot.
+Without this the Mac returns to a login screen and the relay stays down.
+
+Verify after rebooting:
+
+```bash
+launchctl print "gui/$UID/com.solvedblue.relay" | head -5
+curl -s http://127.0.0.1:4000/health
+```
+
+If it is down, bring it back without re-running setup:
+
+```bash
+launchctl kickstart -k "gui/$UID/com.solvedblue.relay"
+```
+
+(Port 4000 is the Mac relay. 8888 is the *Android* relay agent — different thing.)
+
+### 4.5 Clone the repo
 
 ```bash
 cd ~/Developer        # or wherever you keep projects
@@ -194,7 +343,7 @@ git checkout staging
 npm ci
 ```
 
-### 4.4 Create `.env` on the Mac
+### 4.6 Create `.env` on the Mac
 
 `.env` is git-ignored, so it did not come with the clone. Make it:
 
@@ -412,7 +561,8 @@ Reaches customers in minutes with no review. JS only.
 | Fix a bug for customers, no review | `update.yml`, channel `production` |
 | Ship a native change to testers | `release.yml`, profile `staging`, submit |
 | Ship a new version to the stores | merge to `main`, then `release.yml` profile `production`, then finish in both consoles |
-| See the iOS app right now, for free | Part 5 on the Mac mini |
+| See the iOS app, no Mac | iPhone + TestFlight (Part 7) |
+| See the iOS app on a spare Mac | Part 5, Simulator |
 
 ---
 
@@ -424,7 +574,7 @@ Reaches customers in minutes with no review. JS only.
 | 2 | **Commit and push the backend**, so `/auth/apple` exists | — | free |
 | 3 | Android OAuth client + `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` | the SHA-1 you have | free |
 | 4 | Android dev build, verify Google sign-in | 3 | free |
-| 5 | Parts 4–5: Mac mini, iOS in the Simulator | a spare Mac | free |
+| 5 | ~~Parts 4–5: Mac Simulator~~ — **skip, optional** | a **non-fleet** Mac | free |
 | 6 | Apple Developer membership | — | $99/yr |
 | 7 | Part 7: TestFlight, and Apple sign-in at last | 6 | — |
 | 8 | Google Play account (**register as an organisation**) | — | $25 |
@@ -462,14 +612,39 @@ the same Android OAuth client. It accepts several.
 emulator, `adb reverse tcp:3000 tcp:3000` must be active and the backend
 running. On the Mac, `EXPO_PUBLIC_API_URL` should be `https://staging.solvedblue.com`.
 
+**`node` aborts with `Library not loaded: libsimdjson.*.dylib` on macOS.**
+Homebrew's `node` is linked against a `simdjson` that is no longer installed.
+Install Node through `fnm` instead (Part 4.3) — it takes `PATH` priority, so the
+broken binary stops mattering. `brew uninstall node` to be rid of it.
+
+**`xcrun simctl list runtimes` prints `Install Failed: Authorization is
+required`.** Xcode tried to auto-install an extra component. Harmless if a real
+runtime is also listed on the following line — that is the one you will use.
+
 **Apple sign-in returns 404.** The backend is not deployed — see step 2 above.
 
 **Push notifications never arrive.** Needs a physical device, the `projectId` in
 `app.json` (now present), and the FCM key for Android / APNs key for iOS.
 
-**CI fails on `expo-doctor`.** It cannot — that job is `continue-on-error`. If
-the `check` job fails, read the step that went red; all three of its commands
-run locally too.
+**The `Dependency doctor` job is red.** It does not block anything —
+`continue-on-error` is set, and the workflow run stays green. Only the
+`Typecheck, lint and bundle` job gates a merge.
+
+It mostly goes red because Expo published a patch release, not because of your
+change. Fix it with:
+
+```powershell
+npx expo install --fix
+```
+
+Take it seriously when it reports a **missing peer dependency** — that is the
+one failure mode that crashes real builds while tsc, lint and the bundler all
+stay green.
+
+**`npx expo-doctor` seems to hang locally.** It is not hanging. npx is asking
+*"Need to install expo-doctor@x. Ok to proceed?"* and waiting for a keypress,
+and the prompt is easy to miss. Run `npx --yes expo-doctor` instead — it
+finishes in seconds.
 
 ---
 

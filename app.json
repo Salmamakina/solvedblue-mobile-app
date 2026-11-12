@@ -10,18 +10,12 @@
       "com.spyder.mobile"
     ],
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "updates": {
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/ed3394c4-7b10-4283-b5a1-a80f689245ef"
     },
     "runtimeVersion": {
       "policy": "fingerprint"
-    },
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F5F5F7"
     },
     "ios": {
       "supportsTablet": true,
@@ -105,7 +99,14 @@
       "expo-router",
       "expo-secure-store",
       "expo-font",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F5F7"
+        }
+      ],
       "expo-web-browser",
       "expo-apple-authentication",
       [
@@ -114,7 +115,8 @@
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#0A84FF"
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

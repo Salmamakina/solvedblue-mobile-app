@@ -29,7 +29,8 @@
       "extends": "development",
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "simulator"
     },
     "staging": {
       "extends": "preview",
@@ -37,7 +38,8 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "channel": "staging"
     },
     "production": {
       "autoIncrement": true,
