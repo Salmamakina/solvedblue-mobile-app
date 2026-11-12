@@ -2,12 +2,26 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Where the API lives. `EXPO_PUBLIC_API_URL` is inlined into the bundle at build
+ * time, so each EAS profile sets its own (see eas.json): a LAN IP for a device
+ * build, staging for preview, production for store builds.
+ *
+ * The fallback in app.json is production over HTTPS rather than localhost. A
+ * release build that somehow ships without the variable then talks to
+ * production instead of to the phone itself, and nothing in the app ever asks
+ * for a plain http:// origin — iOS App Transport Security and Android's
+ * cleartext block would both refuse one.
+ *
+ * An empty string counts as unset: `??` would accept it, and Expo inlines
+ * `EXPO_PUBLIC_API_URL=` in a .env file as "".
+ */
+const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 const configuredUrl =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
+  envUrl || (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl || '';
 
 /** Trailing slashes would produce //api, which some proxies treat as a different route. */
-export const apiBaseUrl = `${(configuredUrl ?? '').replace(/\/+$/, '')}/api`;
+export const apiBaseUrl = `${configuredUrl.replace(/\/+$/, '')}/api`;
 
 const api = axios.create({
   baseURL: apiBaseUrl,

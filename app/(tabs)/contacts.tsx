@@ -10,8 +10,9 @@ import {
   contactsApi,
   type ContactFilter,
 } from '../../src/api/contacts';
+import { AppHeader } from '../../src/components/AppHeader';
 import { Badge } from '../../src/components/Badge';
-import { Refresh } from '../../src/components/Refresh';
+import { Button } from '../../src/components/Button';
 import { Screen } from '../../src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { useTheme } from '../../src/theme/useTheme';
@@ -23,14 +24,28 @@ export default function ContactsScreen() {
   const [filter, setFilter] = useState<ContactFilter>('all');
   const [query, setQuery] = useState('');
 
-  const { data, isLoading, isRefetching, error, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: [CONTACTS_QUERY_KEY, filter, query],
     queryFn: () => contactsApi.list({ filter, q: query }),
   });
 
   return (
     <Screen>
+      <AppHeader />
       <View style={{ paddingHorizontal: space.lg, paddingTop: space.md, gap: space.md }}>
+        <View style={styles.actions}>
+          <Button
+            label="Add contact"
+            onPress={() => router.push('/contacts/new')}
+            style={styles.action}
+          />
+          <Button
+            label="Import"
+            variant="secondary"
+            onPress={() => router.push('/contacts/import')}
+            style={styles.action}
+          />
+        </View>
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -90,29 +105,31 @@ export default function ContactsScreen() {
           data={data?.contacts ?? []}
           keyExtractor={(contact) => contact.id}
           style={{ marginTop: space.md }}
-          refreshControl={<Refresh refreshing={isRefetching} onRefresh={refetch} />}
           ItemSeparatorComponent={() => (
             <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.sep }} />
           )}
           ListEmptyComponent={
             <EmptyState
               title="No contacts"
-              hint={query ? 'Nothing matches that search.' : 'Import contacts on the web app.'}
+              hint={
+                query
+                  ? 'Nothing matches that search.'
+                  : filter === 'all'
+                    ? 'Add one by hand, or import a file or a Google Sheet.'
+                    : `No contacts are ${filter === 'flagged' ? 'flagged' : 'opted out'}.`
+              }
             />
           }
           contentContainerStyle={(data?.contacts?.length ?? 0) === 0 ? styles.grow : undefined}
           renderItem={({ item }) => (
+            // Opens the contact rather than the conversation. The conversation
+            // is one button away there, and this way a contact with only an
+            // email address is reachable at all: such a row used to be
+            // disabled, so tapping it did nothing.
             <Pressable
               accessibilityRole="button"
-              disabled={!item.phone}
-              onPress={() =>
-                item.phone
-                  ? router.push({
-                      pathname: '/chat/[phone]',
-                      params: { phone: item.phone, name: contactName(item) },
-                    })
-                  : undefined
-              }
+              accessibilityLabel={contactName(item)}
+              onPress={() => router.push({ pathname: '/contacts/[id]', params: { id: item.id } })}
               style={({ pressed }) => [
                 styles.row,
                 {
@@ -131,7 +148,9 @@ export default function ContactsScreen() {
                   {item.last_message_at ? ` · ${shortTime(item.last_message_at)}` : ''}
                 </Text>
               </View>
-              <View style={styles.tagRow}>
+              {/* Top-right, so the labels line up with the name rather than
+                  being centred against the row. */}
+              <View style={[styles.tagRow, { marginLeft: space.sm }]}>
                 {item.opted_out ? <Badge label="Opted out" tone="bad" /> : null}
                 {item.flagged ? <Badge label="Flagged" tone="warn" /> : null}
               </View>
@@ -144,8 +163,10 @@ export default function ContactsScreen() {
 }
 
 const styles = StyleSheet.create({
+  actions: { flexDirection: 'row', gap: 8 },
+  action: { flex: 1 },
   chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  tagRow: { flexDirection: 'row', gap: 6, marginLeft: 8 },
+  row: { flexDirection: 'row', alignItems: 'flex-start' },
+  tagRow: { alignItems: 'flex-end', gap: 4 },
   grow: { flexGrow: 1 },
 });

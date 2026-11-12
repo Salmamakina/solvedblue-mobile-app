@@ -10,19 +10,28 @@ export interface HomeSetup {
   first_reply: boolean;
 }
 
+/**
+ * What /home/summary returns for a line.
+ *
+ * Only `used_today`, `cap` and `health` are always present: the backend narrows
+ * each line to those three for customers (`customerLine` in
+ * spyder-backend/src/services/lineLimits.ts) and sends the full record only to
+ * platform admins. Everything else is therefore optional, and the UI has to
+ * cope with it being absent.
+ */
 export interface HomeLine {
-  id: string;
-  name: string;
-  /** 'android' for text fallback lines; anything else is an iMessage (Mac) line. */
-  platform: string;
-  status: string;
-  last_seen: string | null;
-  apple_id_masked: string | null;
   used_today: number;
   cap: number;
-  warmup: { day: number; complete: boolean };
   health: LineHealth;
-  reply_rate_7d: number;
+  id?: string;
+  name?: string;
+  /** 'android' for text fallback lines; anything else is an iMessage (Mac) line. */
+  platform?: string;
+  status?: string;
+  last_seen?: string | null;
+  apple_id_masked?: string | null;
+  warmup?: { day: number; complete: boolean };
+  reply_rate_7d?: number;
 }
 
 export interface HomeStats {

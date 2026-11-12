@@ -2,6 +2,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import { useRouter } from 'expo-router';
 import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { authApi } from '../api/auth';
 import { apiErrorMessage } from '../api/client';
@@ -30,6 +31,18 @@ WebBrowser.maybeCompleteAuthSession();
 /** The user closed the browser themselves. Not worth showing as an error. */
 const DISMISSED = new Set(['dismiss', 'cancel', 'locked']);
 
+/**
+ * Expo inlines an unset `EXPO_PUBLIC_*` as the empty string, not as undefined.
+ * That matters here because the provider resolves its client id with `??`,
+ * which does not treat `""` as missing — so a blank line in `.env` would be
+ * passed to Google as the client id instead of falling back. The same trap
+ * already bit `src/api/client.ts` and produced a base URL of `/api`.
+ */
+function envClientId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 export interface GoogleSignIn {
   signIn: () => void;
   loading: boolean;
@@ -46,11 +59,24 @@ export function useGoogleSignIn(): GoogleSignIn {
   /** Guards against running the exchange twice for one response. */
   const handled = useRef<string | null>(null);
 
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-  const hasClientId = Boolean(webClientId || iosClientId || androidClientId);
-  const configured = hasClientId && firebaseConfigured;
+  const webClientId = envClientId(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
+  const iosClientId = envClientId(process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+  const androidClientId = envClientId(process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID);
+
+  /*
+   * The provider picks the client id by platform — `iosClientId` on iOS,
+   * `androidClientId` on Android, `webClientId` otherwise — so having *a*
+   * client id is not the same as having the one this platform will read.
+   *
+   * It matters because the fallback is worse than nothing: with no iOS id, the
+   * provider would send the **web** client id with a custom-scheme redirect,
+   * which Google rejects for a web client. A missing id should disable the
+   * button and say so, not produce an opaque error from Google.
+   */
+  const platformClientId =
+    Platform.select({ ios: iosClientId, android: androidClientId, default: webClientId }) ??
+    webClientId;
+  const configured = Boolean(platformClientId) && firebaseConfigured;
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: webClientId,
@@ -58,6 +84,18 @@ export function useGoogleSignIn(): GoogleSignIn {
     androidClientId,
   });
 
+  /*
+   * react-hooks/set-state-in-effect is disabled for this effect, deliberately.
+   *
+   * `response` is state owned by expo-auth-session: it changes when the system
+   * browser comes back, which is exactly the "subscribe to an external system"
+   * case the rule's own documentation exempts. There is nowhere else to react
+   * to it, and the alternative — awaiting promptAsync() in signIn instead —
+   * would restructure the one flow in this app that has never been run end to
+   * end against a real Google client (see ROADMAP P0.1). Not worth rewriting
+   * blind to satisfy a linter.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!response) return;
 
@@ -103,6 +141,7 @@ export function useGoogleSignIn(): GoogleSignIn {
       setError('Could not sign in with Google.');
     }
   }, [response, setAuth, router]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const signIn = useCallback(() => {
     setError('');

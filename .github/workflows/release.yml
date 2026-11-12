@@ -1,0 +1,137 @@
+# Store builds, and optionally store delivery.
+#
+# Deliberately manual. A build costs money and a submission is hard to take
+# back, so neither happens because someone merged a pull request. Run it from
+# the Actions tab, or from the CLI:
+#
+#   gh workflow run release.yml -f profile=production -f platform=all -f submit=true
+#
+# Before the first run this workflow cannot work, and that is expected. It needs
+# an Expo account (`eas login`), a project (`eas init`), and one interactive
+# `eas build` per platform to generate the signing credentials — CI can only
+# reuse credentials, never create them. See STORE_RELEASE.md.
+#
+# Version numbers are not managed here: eas.json sets `appVersionSource: remote`
+# and `autoIncrement` on the production profile, so Expo owns the build number.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build profile'
+        type: choice
+        required: true
+        default: preview
+        options: [preview, staging, production]
+      platform:
+        description: 'Platform to build'
+        type: choice
+        required: true
+        default: all
+        options: [all, ios, android]
+      submit:
+        description: 'Hand the finished build to the store (production only)'
+        type: boolean
+        required: false
+        default: false
+      wait:
+        description: 'Wait for the build, so this run goes red if it fails'
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.platform }} (${{ inputs.profile }})
+    runs-on: ubuntu-latest
+    # A store build can sit in the EAS queue for a while before it starts.
+    timeout-minutes: 120
+    steps:
+      # Fails loudly rather than skipping: someone pressed the button on purpose,
+      # so a missing token should say what to do about it.
+      - name: Check for EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::No EXPO_TOKEN secret. Create a personal access token at" \
+                 "https://expo.dev/settings/access-tokens and add it under" \
+                 "Settings > Secrets and variables > Actions as EXPO_TOKEN."
+            exit 1
+          fi
+
+      # `preview` is ad-hoc internal distribution: its build URLs are installed
+      # by UDID and there is nothing to submit. `staging` and `production` are
+      # both `distribution: store`, so both can go to TestFlight and the Play
+      # internal track — staging reaches testers, production reaches review.
+      - name: Refuse to submit a build that cannot be submitted
+        if: inputs.submit && inputs.profile == 'preview'
+        run: |
+          echo "::error::profile=preview is ad-hoc internal distribution and cannot be" \
+               "submitted. Use profile=staging for TestFlight, or profile=production" \
+               "for a store release."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same gate CI runs, repeated here because a release can be cut from a
+      # commit that never went through a pull request.
+      - name: Typecheck and lint
+        run: |
+          npx expo export --platform ios
+          npx tsc --noEmit
+          npx expo lint
+
+      # Flags are assembled in the shell rather than interpolated into the
+      # command line, so an unset optional input cannot leave a dangling `\`.
+      - name: Build
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          PROFILE: ${{ inputs.profile }}
+          SUBMIT: ${{ inputs.submit }}
+          WAIT: ${{ inputs.wait }}
+        run: |
+          set -euo pipefail
+          flags=(--platform "$PLATFORM" --profile "$PROFILE" --non-interactive)
+          # `if` rather than `cond && action`: under `set -e` a false condition at
+          # the end of an AND-list aborts the whole step.
+          if [ "$SUBMIT" = 'true' ]; then
+            flags+=(--auto-submit)
+          fi
+          if [ "$WAIT" != 'true' ]; then
+            flags+=(--no-wait)
+          fi
+          echo "eas build ${flags[*]}"
+          eas build "${flags[@]}"
+
+      - name: Where to look
+        if: always()
+        run: |
+          echo "Builds: https://expo.dev/accounts/_/projects/spyder-mobile-app/builds"
+          if [ '${{ inputs.submit }}' = 'true' ]; then
+            echo "Submission continues on Expo's servers after this run ends."
+            echo "App Store Connect and the Play Console still need the release" \
+                 "filled in and sent for review by hand."
+          fi

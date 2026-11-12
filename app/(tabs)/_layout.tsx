@@ -12,19 +12,22 @@ type IconName = keyof typeof Ionicons.glyphMap;
  * wants a plain string. One wrapper keeps the narrowing in a single place.
  */
 function tabIcon(name: IconName) {
-  return ({ color, size }: { focused: boolean; color: ColorValue; size: number }) => (
-    <Ionicons name={name} color={(color as string) ?? undefined} size={size} />
-  );
+  // Named, because Tabs renders it as a component and an anonymous one shows up
+  // as `Unknown` in a stack trace or the React devtools.
+  function TabIcon({ color, size }: { focused: boolean; color: ColorValue; size: number }) {
+    return <Ionicons name={name} color={(color as string) ?? undefined} size={size} />;
+  }
+  return TabIcon;
 }
 
 export default function TabsLayout() {
   const { colors } = useTheme();
 
-  // The needs-reply count, the same badge the web sidebar shows.
+  // Unread conversations, not every conversation needing a reply: the badge is
+  // there to say "there is something new you have not seen".
   const { data: badge } = useQuery({
     queryKey: [INBOX_BADGE_QUERY_KEY],
-    queryFn: () => inboxApi.list({ folder: 'needs_reply', limit: 1 }),
-    select: (page) => page.counts.needs_reply,
+    queryFn: inboxApi.unreadCount,
     refetchInterval: 60_000,
   });
 
@@ -34,9 +37,10 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.label2,
         tabBarStyle: { backgroundColor: colors.bg2, borderTopColor: colors.sep },
-        headerStyle: { backgroundColor: colors.bg2 },
-        headerTitleStyle: { color: colors.label },
-        headerTintColor: colors.blue,
+        // Every tab screen draws its own AppHeader, which carries the brand and
+        // the Contact sales button the way the web header does. The stock
+        // header would sit above it showing the title twice.
+        headerShown: false,
         sceneStyle: { backgroundColor: colors.bg },
       }}
     >

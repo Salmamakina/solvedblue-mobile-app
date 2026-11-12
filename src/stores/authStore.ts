@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
+import { DEV_BYPASS_AUTH, DEV_BYPASS_TOKEN, DEV_BYPASS_USER } from '../config/devBypass';
 
 const TOKEN_KEY = 'spyder-token';
 const USER_KEY = 'spyder-user';
@@ -30,6 +31,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   hydrate: async () => {
     try {
+      // TEMPORARY: with the auth bypass on, start from a real backend-signed
+      // session instead of reading SecureStore. See src/config/devBypass.ts.
+      if (DEV_BYPASS_AUTH) {
+        set({ token: DEV_BYPASS_TOKEN, user: { ...DEV_BYPASS_USER }, hydrated: true });
+        return;
+      }
+
       const [token, rawUser] = await Promise.all([
         SecureStore.getItemAsync(TOKEN_KEY),
         SecureStore.getItemAsync(USER_KEY),
@@ -59,6 +67,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearAuth: async () => {
+    // TEMPORARY: with the bypass on there is no sign-in screen to return to, so
+    // a stray 401 would strand the app on a blank guard. Keep the dev session.
+    // See src/config/devBypass.ts.
+    if (DEV_BYPASS_AUTH) return;
+
     set({ token: null, user: null });
     await Promise.all([
       SecureStore.deleteItemAsync(TOKEN_KEY),

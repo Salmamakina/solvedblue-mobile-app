@@ -1,0 +1,90 @@
+# Pull request gate for the mobile app.
+#
+# Nothing merges unless the app typechecks, lints and bundles. Make this
+# workflow required in the branch protection rules for `main`, otherwise the
+# gate is advisory only.
+#
+# Mirrors the conventions in the Spyder monorepo's .github/workflows/ci.yml:
+# Node 22, npm ci against the committed lockfile, typecheck as the merge gate.
+# This repo is deliberately separate from that monorepo, so releasing the app
+# never triggers a backend or web deploy, and the monorepo's `v*` deploy tag
+# cannot collide with anything here.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, staging]
+  # Both long-lived branches are checked on push too: `staging` because an OTA
+  # update goes out from it, `main` because a production build is cut from it.
+  push:
+    branches: [main, staging]
+
+# A new push to a PR makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, lint and bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Expo 58 wants ^22.13 || ^24.3 || ^26 || >=27.
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Deliberately before the typecheck, and the reason is not obvious.
+      #
+      # `experiments.typedRoutes` is on, so `Href` is only as strict as
+      # .expo/types/router.d.ts says. That file is generated and git-ignored, so
+      # a fresh checkout would otherwise typecheck against a permissive `Href`
+      # and a bad `router.push('/campaign/1')` would sail through the gate.
+      #
+      # Exporting writes it (verified on SDK 58 — `expo customize tsconfig.json`,
+      # which the typed-routes doc suggests for CI, does not), and bundling also
+      # catches resolution and native-import errors that tsc cannot see.
+      - name: Bundle, and generate the typed route definitions
+        run: npx expo export --platform ios
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx expo lint
+
+  # Advisory, and separate on purpose. `expo-doctor` reaches out to the npm and
+  # Expo registries to compare installed versions against the SDK, so it is slow
+  # and fails for reasons that have nothing to do with the commit under test. It
+  # ran for over 15 minutes locally without finishing.
+  #
+  # Promote this into `check` once someone has worked out why it hangs; until
+  # then a red cross here is a prompt to look, not a reason to block a merge.
+  doctor:
+    name: Dependency doctor (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check SDK dependency health
+        run: npx expo-doctor

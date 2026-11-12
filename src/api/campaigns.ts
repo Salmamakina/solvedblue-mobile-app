@@ -48,10 +48,29 @@ export interface CampaignRecipient {
   error_message?: string | null;
 }
 
+/**
+ * What a new campaign needs. `workflow_id` is what makes the campaign send the
+ * workflow's sequence; without one the backend falls back to a single
+ * `message_text`, which is not how this app creates campaigns.
+ */
+export interface CampaignInput {
+  name: string;
+  workflow_id: string;
+  recipients: { phone_number?: string | null; email?: string | null; name?: string | null }[];
+  /** ISO timestamp. Omit to leave the campaign as a draft to start by hand. */
+  scheduled_start_at?: string;
+}
+
 export const CAMPAIGNS_QUERY_KEY = 'campaigns';
+
+/** Statuses the server lets you edit; 'active' has to be ended first. */
+export const EDITABLE_STATUSES = ['draft', 'scheduled'] as const;
 
 export const campaignsApi = {
   getAll: () => api.get<{ campaigns: Campaign[] }>('/campaigns').then((res) => res.data.campaigns),
+  create: (input: CampaignInput) =>
+    api.post<{ campaign: Campaign }>('/campaigns', input).then((res) => res.data.campaign),
+  remove: (id: string) => api.delete(`/campaigns/${id}`).then(() => undefined),
   get: (id: string) =>
     api
       .get<{ campaign: Campaign; recipients: CampaignRecipient[] }>(`/campaigns/${id}`)

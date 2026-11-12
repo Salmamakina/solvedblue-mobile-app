@@ -51,9 +51,28 @@ export const INBOX_FOLDERS: { key: InboxFolder; label: string }[] = [
 const actionPath = (contact: string, action: string) =>
   `/inbox/${encodeURIComponent(contact)}/${action}`;
 
+/** The server's MAX_LIMIT for /inbox (spyder-backend/src/routes/inbox.ts). */
+export const INBOX_MAX_LIMIT = 100;
+
 export const inboxApi = {
   list: ({ folder, q = '', limit = INBOX_PAGE_SIZE, offset = 0 }: InboxListParams) =>
     api.get<InboxPage>('/inbox', { params: { folder, q, limit, offset } }).then((res) => res.data),
+
+  /**
+   * How many conversations have an unread reply, for the tab bar badge.
+   *
+   * `counts` has no unread total: the backend derives unread per thread, from
+   * whether the latest inbound message is newer than this user's last read. So
+   * this counts the threads itself, over one page of at most MAX_LIMIT. An
+   * organization with more unread conversations than that would undercount,
+   * which is the same ceiling the web badge works to.
+   */
+  unreadCount: () =>
+    api
+      .get<InboxPage>('/inbox', {
+        params: { folder: 'all', q: '', limit: INBOX_MAX_LIMIT, offset: 0 },
+      })
+      .then((res) => res.data.threads.filter((thread) => thread.unread).length),
   read: (contact: string) => api.post(actionPath(contact, 'read')).then(() => undefined),
   close: (contact: string) => api.post(actionPath(contact, 'close')).then(() => undefined),
   reopen: (contact: string) => api.post(actionPath(contact, 'reopen')).then(() => undefined),

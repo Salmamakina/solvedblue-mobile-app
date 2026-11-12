@@ -1,0 +1,119 @@
+# Over-the-air updates.
+#
+# `eas update` ships a JavaScript-only fix to installed apps without a store
+# review cycle. It is the single biggest operational win available here, and the
+# one thing in this pipeline with a real footgun, so the two channels are
+# treated differently:
+#
+#   preview     published automatically on every push to `staging`. Internal
+#               distribution and TestFlight only, so the audience is the team.
+#   production  manual, because this reaches customers in seconds and there is
+#               no review in the way.
+#
+# This mirrors the backend monorepo: pushing to `staging` ships staging, and
+# production is an explicit, dated act rather than a branch head moving.
+#
+# What an update can and cannot carry: app.json sets
+# `runtimeVersion: { policy: "fingerprint" }`, so the runtime is derived from
+# everything affecting the native layer. Change a native module and the
+# fingerprint changes, and this update simply will not be offered to older
+# builds — which is the point. It cannot land on a binary that lacks a native
+# module it needs. Anything native needs a new build from release.yml.
+
+name: Update
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel to publish to'
+        type: choice
+        required: true
+        default: preview
+        options: [preview, production]
+      message:
+        description: 'Update message (defaults to the commit subject)'
+        type: string
+        required: false
+
+concurrency:
+  group: update-${{ inputs.channel || 'preview' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Whether this repo has an Expo account attached yet. Secrets cannot be read
+  # from a job-level `if`, so the answer has to come out of a job.
+  guard:
+    name: Check configuration
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping: no EXPO_TOKEN secret yet, so there is no Expo project to publish to."
+          fi
+
+  update:
+    name: Publish to ${{ inputs.channel || 'preview' }}
+    needs: guard
+    # Skipped rather than failed when unconfigured: a red cross on every push to
+    # `staging`, for a step that cannot work until an account exists, trains
+    # people to ignore red crosses.
+    if: needs.guard.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # An update bypasses store review, so it also bypasses every other chance
+      # to catch a bundle that crashes on launch. This is the only gate it gets.
+      - name: Typecheck, lint and bundle
+        run: |
+          npx expo export --platform ios
+          npx tsc --noEmit
+          npx expo lint
+
+      - name: Publish update
+        env:
+          CHANNEL: ${{ inputs.channel || 'preview' }}
+          # The API URL is per build profile in eas.json, which `eas update` does
+          # not read, so the channel's backend is set here instead. An update
+          # that silently repointed production at staging would be very hard to
+          # notice.
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = 'production' ]; then
+            export EXPO_PUBLIC_API_URL='https://solvedblue.com'
+          else
+            export EXPO_PUBLIC_API_URL='https://staging.solvedblue.com'
+          fi
+          eas update \
+            --channel "$CHANNEL" \
+            --message "${MESSAGE:-$(git log -1 --pretty=%s)}" \
+            --non-interactive

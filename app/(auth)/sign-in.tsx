@@ -1,13 +1,17 @@
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppleSignIn } from '../../src/auth/useAppleSignIn';
 import { useGoogleSignIn } from '../../src/auth/useGoogleSignIn';
 import { GoogleMark, Wordmark } from '../../src/components/Wordmark';
 import { useLightTheme } from '../../src/theme/useTheme';
 
 /**
- * Google-only sign-in, matching the web app, where "Sign up now" opens Google
- * for both new and returning users. There is no email and password form.
+ * Sign-in. Google everywhere, matching the web app, where "Sign up now" opens
+ * Google for both new and returning users; plus Sign in with Apple on iOS,
+ * which App Store Review guideline 4.8 requires wherever a third-party login is
+ * offered. There is no email and password form on either path.
  *
  * Always light, regardless of the theme preference, so it uses useLightTheme
  * rather than useTheme.
@@ -16,6 +20,14 @@ export default function SignInScreen() {
   const { colors, type, space, radius } = useLightTheme();
   const insets = useSafeAreaInsets();
   const { signIn, loading, error, configured } = useGoogleSignIn();
+  const apple = useAppleSignIn();
+
+  // One slot, so two providers cannot both report a failure at once and stack
+  // two banners. Whichever was tried last is the one the message is about.
+  const message = apple.error || error;
+  // Each button disables while either is running: starting Apple halfway
+  // through the Google exchange would race two sessions into setAuth.
+  const busy = loading || apple.loading;
 
   return (
     <View
@@ -44,7 +56,7 @@ export default function SignInScreen() {
       </View>
 
       <View style={{ gap: space.md }}>
-        {error ? (
+        {message ? (
           <View
             accessibilityRole="alert"
             style={{
@@ -55,16 +67,16 @@ export default function SignInScreen() {
               padding: space.md,
             }}
           >
-            <Text style={[type.footnote, { color: colors.red, fontWeight: '600' }]}>{error}</Text>
+            <Text style={[type.footnote, { color: colors.red, fontWeight: '600' }]}>{message}</Text>
           </View>
         ) : null}
 
         <Pressable
           onPress={signIn}
-          disabled={loading}
+          disabled={busy}
           accessibilityRole="button"
           accessibilityLabel="Continue with Google"
-          accessibilityState={{ disabled: loading, busy: loading }}
+          accessibilityState={{ disabled: busy, busy: loading }}
           style={({ pressed }) => [
             styles.googleButton,
             {
@@ -73,7 +85,7 @@ export default function SignInScreen() {
               borderRadius: radius.md,
               paddingVertical: space.md,
               paddingHorizontal: space.lg,
-              opacity: loading ? 0.6 : pressed ? 0.85 : 1,
+              opacity: busy ? 0.6 : pressed ? 0.85 : 1,
             },
           ]}
         >
@@ -87,6 +99,21 @@ export default function SignInScreen() {
           )}
         </Pressable>
 
+        {/* Apple's own button rather than one of ours: the Human Interface
+            Guidelines dictate its wording, logo and colours, and the system
+            one is approved, localised and accessible without us matching them
+            by hand. Rendered only where the system supports it, so Android and
+            the web never see a control that cannot work. */}
+        {apple.available ? (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={radius.md}
+            onPress={busy ? () => undefined : apple.signIn}
+            style={[styles.appleButton, { opacity: busy ? 0.6 : 1 }]}
+          />
+        ) : null}
+
         {!configured ? (
           <Text style={[type.caption, { color: colors.label2, textAlign: 'center' }]}>
             Sign-in is not configured in this build.
@@ -99,7 +126,7 @@ export default function SignInScreen() {
             { color: colors.label2, textAlign: 'center', marginTop: space.sm },
           ]}
         >
-          New and returning users both sign in with Google.
+          New and returning users sign in the same way.
         </Text>
       </View>
     </View>
@@ -117,4 +144,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     minHeight: 50,
   },
+  // The native button draws nothing without an explicit height, and 50 matches
+  // the Google button above it so the pair reads as one stack.
+  appleButton: { width: '100%', height: 50 },
 });

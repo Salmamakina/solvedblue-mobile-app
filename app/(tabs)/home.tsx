@@ -2,39 +2,101 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { apiErrorMessage } from '../../src/api/client';
-import { dailyUsage, HOME_QUERY_KEY, homeApi } from '../../src/api/home';
-import { Badge, campaignTone, healthTone } from '../../src/components/Badge';
+import { dailyUsage, HOME_QUERY_KEY, homeApi, type HomeSetup } from '../../src/api/home';
+import { AppHeader } from '../../src/components/AppHeader';
+import { Badge, campaignTone } from '../../src/components/Badge';
 import { Card } from '../../src/components/Card';
-import { Refresh } from '../../src/components/Refresh';
+import { ProgressBar } from '../../src/components/ProgressBar';
 import { Screen } from '../../src/components/Screen';
 import { ErrorState, LoadingState } from '../../src/components/StateView';
+import {
+  useScrollToTop,
+  type ScrollViewInstance,
+} from '../../src/components/useScrollToTop';
+import { useAuthStore } from '../../src/stores/authStore';
 import { useTheme } from '../../src/theme/useTheme';
-import { percent, shortTime, threadTitle } from '../../src/utils/format';
+import { shortTime, threadTitle } from '../../src/utils/format';
+import {
+  deltaNote,
+  firstName,
+  formatHomeDate,
+  greetingFor,
+  HEALTH_FACTOR_LABELS,
+  healthDeltaNote,
+  NEAR_CAP,
+  rate,
+  setupSteps,
+} from '../../src/utils/home';
 
+/**
+ * Mirrors spyder-web/src/pages/home/Home.tsx: greeting, setup steps, Today
+ * usage, the four KPI tiles, account health, then waiting and campaigns.
+ *
+ * Every section renders whether or not there is data, because a new account has
+ * none and still needs to see where its numbers will appear. Each one falls
+ * back to the same wording the web uses rather than disappearing.
+ */
 export default function HomeScreen() {
   const { colors, type, space } = useTheme();
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  // Home is the longest screen, so tapping the Home tab returns to the top.
+  const scrollRef = useScrollToTop<ScrollViewInstance>();
 
-  const { data, isLoading, isRefetching, error, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: [HOME_QUERY_KEY],
     queryFn: homeApi.summary,
+    refetchInterval: 30_000,
   });
 
-  if (isLoading) return <LoadingState label="Loading your workspace" />;
+  const now = new Date();
+  const name = firstName(user?.email);
+  const greeting = name ? `${greetingFor(now.getHours())}, ${name}` : greetingFor(now.getHours());
+
+  // The header stays put while the body loads or fails, so the brand and
+  // Contact sales never disappear.
+  if (isLoading) {
+    return (
+      <Screen>
+        <AppHeader />
+        <LoadingState label="Loading your workspace" />
+      </Screen>
+    );
+  }
   if (error || !data) {
     return (
-      <ErrorState message={apiErrorMessage(error, 'Could not load home')} onRetry={() => refetch()} />
+      <Screen>
+        <AppHeader />
+        <ErrorState
+          message={apiErrorMessage(error, 'Could not load home')}
+          onRetry={() => refetch()}
+        />
+      </Screen>
     );
   }
 
   const usage = dailyUsage(data.lines);
+  const steps = setupSteps(data.setup);
+  const setupDone = steps.every((step) => data.setup[step.key]);
+  const optOutNote =
+    data.stats.optout_rate_7d >= 0.02
+      ? 'Last 7 days · above the 2% target'
+      : 'Last 7 days · keep under 2%';
 
   return (
     <Screen>
+      <AppHeader />
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ padding: space.lg, gap: space.lg }}
-        refreshControl={<Refresh refreshing={isRefetching} onRefresh={refetch} />}
       >
+        <View>
+          <Text style={[type.caption, { color: colors.label2 }]}>{formatHomeDate(now)}</Text>
+          <Text style={[type.largeTitle, { color: colors.label, marginTop: space.xs }]}>
+            {greeting}
+          </Text>
+        </View>
+
         {data.paused ? (
           <Card style={{ backgroundColor: colors.orangeTint, borderColor: colors.orange }}>
             <Text style={[type.headline, { color: colors.orange }]}>Sending is paused</Text>
@@ -44,11 +106,69 @@ export default function HomeScreen() {
           </Card>
         ) : null}
 
+        {!setupDone ? <SetupCard setup={data.setup} /> : null}
+
+        <Card title="Today">
+          {data.lines.length === 0 ? (
+            <Text style={[type.footnote, { color: colors.label2 }]}>
+              Your line is being set up. We&apos;ll email you when it&apos;s ready.
+            </Text>
+          ) : (
+            <View style={{ gap: space.sm }}>
+              <View style={styles.between}>
+                <Text
+                  style={[
+                    type.footnote,
+                    {
+                      color: usage.cap > 0 && usage.used / usage.cap >= NEAR_CAP
+                        ? colors.orange
+                        : colors.blue,
+                      fontWeight: '600',
+                    },
+                  ]}
+                >
+                  Used today
+                </Text>
+                <Text style={[type.footnote, { color: colors.label2 }]}>
+                  {usage.left} left
+                </Text>
+              </View>
+              <Text style={[type.title, { color: colors.label }]}>
+                {usage.used} of {usage.cap}
+                <Text style={[type.footnote, { color: colors.label2 }]}> new contacts</Text>
+              </Text>
+              <ProgressBar
+                percent={usage.cap > 0 ? (usage.used / usage.cap) * 100 : 0}
+                color={
+                  usage.cap > 0 && usage.used / usage.cap >= NEAR_CAP
+                    ? colors.orange
+                    : colors.blue
+                }
+                label={`${usage.used} of ${usage.cap} new contacts used today`}
+              />
+            </View>
+          )}
+        </Card>
+
+        {/* The four tiles the web shows, so the KPIs are visible at zero too. */}
+        <View style={styles.tiles}>
+          <StatTile label="Sent" value={String(data.stats.sent_today)} note={deltaNote(data.stats.sent_today, data.stats.sent_yesterday)} color={colors.blue} />
+          <StatTile label="Replies" value={String(data.stats.replies_today)} note={deltaNote(data.stats.replies_today, data.stats.replies_yesterday)} color={colors.green} />
+          <StatTile label="Reply rate" value={rate(data.stats.reply_rate_7d)} note="Last 7 days" color={colors.green} />
+          <StatTile label="Opt-outs" value={rate(data.stats.optout_rate_7d)} note={optOutNote} color={colors.orange} />
+        </View>
+
         <Card title="Account health">
           {data.health.score === null ? (
-            <Text style={[type.footnote, { color: colors.label2 }]}>
-              Not enough sending yet to score. Send at least 20 messages in a week.
-            </Text>
+            <View style={{ gap: space.xs }}>
+              <Text style={[type.body, { color: colors.label, fontWeight: '600' }]}>
+                Not enough sending yet
+              </Text>
+              <Text style={[type.footnote, { color: colors.label2 }]}>
+                Your score appears after 20 messages in a week. It shows how well your sending is
+                going.
+              </Text>
+            </View>
           ) : (
             <View>
               <View style={styles.row}>
@@ -68,21 +188,22 @@ export default function HomeScreen() {
                   ) : null}
                   {data.health.delta !== null ? (
                     <Text style={[type.caption, { color: colors.label2 }]}>
-                      {data.health.delta >= 0 ? '+' : ''}
-                      {data.health.delta} vs last week
+                      {healthDeltaNote(data.health.delta)}
                     </Text>
                   ) : null}
                 </View>
               </View>
-              <View style={{ marginTop: space.md, gap: space.xs }}>
+              <View style={{ marginTop: space.md, gap: space.md }}>
                 {data.health.factors.map((factor) => (
-                  <View key={factor.key} style={styles.between}>
-                    <Text style={[type.footnote, { color: colors.label2, flex: 1 }]}>
-                      {factor.hint}
-                    </Text>
-                    <Text style={[type.footnote, { color: colors.label, fontWeight: '600' }]}>
-                      {factor.score}
-                    </Text>
+                  <View key={factor.key} style={{ gap: space.xs }}>
+                    <View style={styles.between}>
+                      <Text style={[type.footnote, { color: colors.label }]}>
+                        {HEALTH_FACTOR_LABELS[factor.key] ?? factor.key}
+                      </Text>
+                      <Text style={[type.footnote, { color: colors.label2 }]}>{factor.score}</Text>
+                    </View>
+                    <ProgressBar percent={factor.score} label={factor.hint} />
+                    <Text style={[type.caption, { color: colors.label2 }]}>{factor.hint}</Text>
                   </View>
                 ))}
               </View>
@@ -90,42 +211,10 @@ export default function HomeScreen() {
           )}
         </Card>
 
-        <Card title="Today">
-          <View style={styles.statRow}>
-            <Stat label="Sent" value={String(data.stats.sent_today)} />
-            <Stat label="Replies" value={String(data.stats.replies_today)} />
-            <Stat label="Reply rate 7d" value={percent(data.stats.reply_rate_7d)} />
-          </View>
-          <Text style={[type.caption, { color: colors.label2, marginTop: space.md }]}>
-            {usage.used} of {usage.cap} new contacts used today, {usage.left} left.
-          </Text>
-        </Card>
-
-        <Card title={`Lines (${data.lines.length})`}>
-          {data.lines.length === 0 ? (
-            <Text style={[type.footnote, { color: colors.label2 }]}>No lines connected yet.</Text>
-          ) : (
-            <View style={{ gap: space.md }}>
-              {data.lines.map((line) => (
-                <View key={line.id} style={styles.between}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[type.body, { color: colors.label }]}>{line.name}</Text>
-                    <Text style={[type.caption, { color: colors.label2 }]}>
-                      {line.used_today}/{line.cap} today
-                      {line.warmup.complete ? '' : ` · warmup day ${line.warmup.day}`}
-                    </Text>
-                  </View>
-                  <Badge label={line.health} tone={healthTone(line.health)} />
-                </View>
-              ))}
-            </View>
-          )}
-        </Card>
-
         <Card title="Waiting on you">
           {data.waiting.length === 0 ? (
             <Text style={[type.footnote, { color: colors.label2 }]}>
-              Nothing waiting. Every conversation has a reply.
+              You&apos;re all caught up.
             </Text>
           ) : (
             <View style={{ gap: space.sm }}>
@@ -163,20 +252,32 @@ export default function HomeScreen() {
 
         <Card title="Campaigns">
           {data.campaigns.length === 0 ? (
-            <Text style={[type.footnote, { color: colors.label2 }]}>No campaigns running.</Text>
+            <Text style={[type.footnote, { color: colors.label2 }]}>
+              No campaigns running right now.
+            </Text>
           ) : (
             <View style={{ gap: space.md }}>
               {data.campaigns.map((campaign) => (
-                <View key={campaign.id} style={styles.between}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[type.body, { color: colors.label }]} numberOfLines={1}>
+                <View key={campaign.id} style={{ gap: space.xs }}>
+                  <View style={styles.between}>
+                    <Text
+                      style={[type.body, { color: colors.label, flex: 1 }]}
+                      numberOfLines={1}
+                    >
                       {campaign.name}
                     </Text>
-                    <Text style={[type.caption, { color: colors.label2 }]}>
-                      {campaign.sent}/{campaign.total} sent · {campaign.replies} replies
-                    </Text>
+                    <Badge label={campaign.status} tone={campaignTone(campaign.status)} />
                   </View>
-                  <Badge label={campaign.status} tone={campaignTone(campaign.status)} />
+                  <ProgressBar
+                    percent={campaign.total > 0 ? (campaign.sent / campaign.total) * 100 : 0}
+                    label={`${campaign.sent} of ${campaign.total} sent`}
+                  />
+                  <Text style={[type.caption, { color: colors.label2 }]}>
+                    {campaign.sent > 0
+                      ? `${campaign.sent} of ${campaign.total} sent`
+                      : `${campaign.total} contacts`}{' '}
+                    · {campaign.replies} {campaign.replies === 1 ? 'reply' : 'replies'}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -187,12 +288,101 @@ export default function HomeScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  const { colors, type } = useTheme();
+/** The web's setup card: progress, then the three steps with their next action. */
+function SetupCard({ setup }: { setup: HomeSetup }) {
+  const { colors, type, space } = useTheme();
+  const router = useRouter();
+  const steps = setupSteps(setup);
+  const done = steps.filter((step) => setup[step.key]).length;
+  const nextIndex = steps.findIndex((step) => !setup[step.key]);
+
   return (
-    <View style={{ flex: 1 }}>
-      <Text style={[type.title, { color: colors.label }]}>{value}</Text>
-      <Text style={[type.caption, { color: colors.label2 }]}>{label}</Text>
+    <Card>
+      <Text style={[type.headline, { color: colors.label }]}>Finish setting up</Text>
+      <Text style={[type.footnote, { color: colors.label2, marginTop: space.xs }]}>
+        {done} of {steps.length} done. Your first reply usually arrives within a day.
+      </Text>
+      <View style={{ marginTop: space.md }}>
+        <ProgressBar
+          percent={(done / steps.length) * 100}
+          label={`${done} of ${steps.length} steps done`}
+        />
+      </View>
+
+      <View style={{ marginTop: space.lg, gap: space.md }}>
+        {steps.map((step, index) => {
+          const isDone = setup[step.key];
+          const isNext = index === nextIndex;
+          return (
+            <View key={step.key} style={styles.step}>
+              <View
+                style={[
+                  styles.dot,
+                  {
+                    borderColor: isDone ? colors.green : colors.label2,
+                    backgroundColor: isDone ? colors.green : 'transparent',
+                  },
+                ]}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    type.footnote,
+                    { color: colors.label, fontWeight: isNext ? '700' : '600' },
+                  ]}
+                >
+                  {step.title}
+                </Text>
+                {isDone ? (
+                  <Text style={[type.caption, { color: colors.label2 }]}>{step.done}</Text>
+                ) : step.to ? (
+                  <Pressable
+                    accessibilityRole="link"
+                    onPress={() => router.push(step.to as never)}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                  >
+                    <Text style={[type.caption, { color: colors.blue }]}>{step.todo}</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={[type.caption, { color: colors.label2 }]}>{step.todo}</Text>
+                )}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
+/** One KPI tile. Two per row, so four fill the same grid the web uses. */
+function StatTile({
+  label,
+  value,
+  note,
+  color,
+}: {
+  label: string;
+  value: string;
+  note: string;
+  color: string;
+}) {
+  const { colors, type, radius, space } = useTheme();
+  return (
+    <View
+      style={[
+        styles.tile,
+        {
+          backgroundColor: colors.bg2,
+          borderColor: colors.sep,
+          borderRadius: radius.lg,
+          padding: space.md,
+        },
+      ]}
+    >
+      <Text style={[type.footnote, { color, fontWeight: '600' }]}>{label}</Text>
+      <Text style={[type.title, { color: colors.label, marginVertical: space.xs }]}>{value}</Text>
+      <Text style={[type.caption, { color: colors.label2 }]}>{note}</Text>
     </View>
   );
 }
@@ -200,5 +390,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statRow: { flexDirection: 'row', gap: 12 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  tile: { flexGrow: 1, flexBasis: '45%', borderWidth: StyleSheet.hairlineWidth },
+  step: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.6, marginTop: 2 },
 });
