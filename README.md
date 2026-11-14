@@ -15,16 +15,23 @@ cp .env.example .env     # then set EXPO_PUBLIC_API_URL
 npm start                # press i for iOS, a for Android
 ```
 
-`localhost` in `.env` points at the phone, not your machine. Use your LAN IP
-(`http://192.168.x.x:3000`); the backend's CORS already allows private ranges,
-and it allows requests with no `Origin` header, which is every native request.
+Point `EXPO_PUBLIC_API_URL` at **staging** (`https://staging.solvedblue.com`).
+That is what every machine uses, so a bug reproduces the same way on all of
+them, and there is no local backend to start.
 
-iOS simulators need macOS. On Windows, use an Android emulator or Expo Go on a
-physical device.
+If you do run the backend locally, `localhost` in `.env` points at the phone,
+not your machine. Use your LAN IP (`http://192.168.x.x:3000`); the backend's
+CORS already allows private ranges, and allows requests with no `Origin`
+header, which is every native request.
+
+iOS simulators need macOS. On Windows, use an Android emulator; on either,
+`tools/run-mobile-app.ps1` (Windows) boots the emulator and attaches Metro.
 
 **Expo Go is not enough for everything.** It only contains the native modules
-Expo bundles into it, and it dropped remote push in SDK 53. Sign in with Apple
-and push notifications need a development build:
+Expo bundles into it, and it dropped remote push in SDK 53. **Google sign-in**,
+Sign in with Apple and push notifications all need a development build — in Expo
+Go the OAuth redirect becomes `exp://…`, which Google refuses with
+`redirect_uri_mismatch`:
 
 ```bash
 npx expo run:ios            # or run:android, locally

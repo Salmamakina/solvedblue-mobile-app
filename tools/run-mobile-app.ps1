@@ -1,7 +1,30 @@
-# One-shot: boot the Android emulator, start Metro, and open the app in Expo Go.
-# Safe to re-run: reuses an already-running emulator and an already-running Metro.
+# One-shot: boot the Android emulator, start Metro, and open the development
+# build. Safe to re-run: reuses an already-running emulator and Metro.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-mobile-app.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-mobile-app.ps1 -Restart
+#
+# This always talks to STAGING (https://staging.solvedblue.com). There is no
+# local-backend mode: one address, the same one the Mac mini uses, so a bug
+# reproduces the same way on both. Nothing needs to be running on port 3000 and
+# spyder-backend does not need to be started.
+#
+# It opens the DEVELOPMENT BUILD, not Expo Go. That is deliberate and not
+# interchangeable:
+#
+#   - Google sign-in cannot work in Expo Go. makeRedirectUri only returns the
+#     native `com.spyder.mobile:/oauthredirect` when executionEnvironment is
+#     Standalone or Bare (expo-auth-session/build/AuthSession.js). Expo Go is
+#     StoreClient, so the redirect becomes `exp://127.0.0.1:8081/--/`, and
+#     Google answers 400 redirect_uri_mismatch. See SETUP.md.
+#   - Install the build once with:
+#         npx eas-cli build --profile development --platform android
+#         npx eas-cli build:run -p android --latest
+#     The development profile reads the `preview` EAS environment, which is
+#     where the staging API URL and the Google client ids live. Do not point it
+#     at the `development` environment: that one is empty, and a build from it
+#     has no client ids, so sign-in disables itself with "Sign-in is
+#     unavailable right now".
 #
 # Notes that matter on this machine:
 #  - Use the Pixel_API_34 AVD. The API 36.1 image crash-loops surfaceflinger
@@ -12,15 +35,12 @@
 #    "Running multiple emulators with the same AVD".
 #  - The emulator rewrites emulator-user.ini on exit, so window position is
 #    re-applied at runtime by fix-emulator-window.ps1 instead of being trusted.
-#  - This starts the app, not the backend. spyder-backend lives in the Spyder
-#    repo and has to be running separately, or every screen shows its error
-#    state and the app looks broken.
 
 param(
     [string]$Avd      = 'Pixel_API_34',
     [string]$AppDir   = 'D:\spyder-mobile-app',
     [int]   $Port     = 8081,
-    [int]   $ApiPort  = 3000,  # spyder-backend, reversed so 127.0.0.1 works in the guest
+    [string]$Package  = 'com.spyder.mobile',
     [switch]$Restart          # force a clean emulator restart
 )
 
@@ -82,15 +102,35 @@ if (-not $booted) { Write-Host '  timed out waiting for boot' -ForegroundColor R
 Step 3 'Placing the emulator window on screen'
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'fix-emulator-window.ps1')
 
-# 4 ------------------------------------------------------------------- metro
+# 4 ------------------------------------------------------- development build
+# Checked before Metro starts, so a missing build is reported in two seconds
+# rather than after waiting for a bundler that nothing will connect to.
+Step 4 "Checking for the development build ($Package)"
+$installed = (cmd /c "`"$adb`" -s emulator-5554 shell pm list packages $Package 2>nul" |
+              Out-String).Trim()
+if (-not $installed) {
+    Write-Host "  $Package is not installed on this emulator." -ForegroundColor Red
+    Write-Host '  Install it once, then re-run this script:' -ForegroundColor Yellow
+    Write-Host '    npx eas-cli build --profile development --platform android' -ForegroundColor Yellow
+    Write-Host '    npx eas-cli build:run -p android --latest' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host '  Expo Go is not a substitute: Google sign-in cannot work there' -ForegroundColor Yellow
+    Write-Host '  (redirect_uri_mismatch). See the header of this script.' -ForegroundColor Yellow
+    exit 1
+}
+Write-Host '  found' -ForegroundColor Green
+
+# 5 ------------------------------------------------------------------- metro
 $listening = (netstat -ano | Select-String ":$Port\s" | Select-String 'LISTENING')
 if ($listening) {
-    Step 4 "Metro already listening on $Port, reusing it"
+    Step 5 "Metro already listening on $Port, reusing it"
 } else {
-    Step 4 "Starting Metro in a separate window on port $Port"
+    Step 5 "Starting Metro in a separate window on port $Port"
+    # --dev-client, because the app being opened is the development build. In
+    # Expo Go mode Metro serves a bundle the dev build will not ask for.
     Start-Process powershell -ArgumentList @(
         '-NoExit', '-NoProfile', '-Command',
-        "Set-Location '$AppDir'; npx expo start --port $Port"
+        "Set-Location '$AppDir'; npx expo start --dev-client --port $Port"
     )
     $up = $false
     for ($i = 0; $i -lt 40; $i++) {
@@ -104,28 +144,22 @@ if ($listening) {
     if (-not $up) { Write-Host '  Metro did not start' -ForegroundColor Red; exit 1 }
 }
 
-# 5 ------------------------------------------------------------------ connect
+# 6 ----------------------------------------------------------------- connect
 # `adb reverse` makes 127.0.0.1:8081 inside the guest reach Metro on the host,
 # so no LAN IP is needed for the bundle.
 #
-# The API gets the same treatment on $ApiPort. Without it, EXPO_PUBLIC_API_URL's
-# 127.0.0.1 resolves to the emulator itself, every /api call is refused, and each
-# screen renders only its error state: a header and a tab bar over a blank page.
-# Reversing the port (rather than switching the URL to 10.0.2.2) keeps one
-# address working from the emulator and from a browser on the host.
-Step 5 'Wiring the emulator to Metro and the API, and opening the app'
+# Only the Metro port is reversed. The API is staging over https, which the
+# emulator reaches over its own network like any other site, so there is
+# nothing to forward and no local backend to start.
+Step 6 'Wiring the emulator to Metro and opening the app'
 cmd /c "`"$adb`" -s emulator-5554 reverse tcp:$Port tcp:$Port" | Out-Null
-cmd /c "`"$adb`" -s emulator-5554 reverse tcp:$ApiPort tcp:$ApiPort" | Out-Null
 
-# The backend is a separate repo, so this script cannot start it. Say so plainly
-# here instead of letting it look like a bug in the app.
-if (-not (netstat -ano | Select-String ":$ApiPort\s" | Select-String 'LISTENING')) {
-    Write-Host "  WARNING: nothing is listening on $ApiPort, so the API is down." -ForegroundColor Yellow
-    Write-Host '  Every screen will show "Could not load ...". Start it with:' -ForegroundColor Yellow
-    Write-Host '    cd D:\Spyder\spyder-backend; npm run dev' -ForegroundColor Yellow
-}
-cmd /c "`"$adb`" -s emulator-5554 shell am start -a android.intent.action.VIEW -d exp://127.0.0.1:$Port 2>&1" |
+# The dev-client deep link: the app's scheme, then the Metro URL to load.
+$metroUrl = [System.Uri]::EscapeDataString("http://127.0.0.1:$Port")
+$deepLink = "$Package`://expo-development-client/?url=$metroUrl"
+cmd /c "`"$adb`" -s emulator-5554 shell am start -a android.intent.action.VIEW -d `"$deepLink`" 2>&1" |
     Out-String | Write-Host
 
 Write-Host ''
-Write-Host 'Done. First bundle takes ~25s; watch the Metro window for progress.' -ForegroundColor Green
+Write-Host 'Done. Pointing at https://staging.solvedblue.com.' -ForegroundColor Green
+Write-Host 'First bundle takes ~25s; watch the Metro window for progress.' -ForegroundColor Green

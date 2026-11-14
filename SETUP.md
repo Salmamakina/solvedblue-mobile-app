@@ -420,7 +420,13 @@ eas build:run -p android --latest
 npx expo start --dev-client
 ```
 
-On Windows you already have `tools/run-mobile-app.ps1` for booting the emulator.
+On Windows the same two build commands apply, and
+`tools/run-mobile-app.ps1 -Restart` then does the rest: boots the AVD, starts
+Metro with `--dev-client`, reverses the Metro port and opens the build. It
+checks the build is installed first and tells you these commands if it is not.
+
+Everything points at `https://staging.solvedblue.com`, on both platforms. There
+is no local-backend mode and nothing to start on port 3000.
 
 ---
 
@@ -438,7 +444,31 @@ part works without it.
    - Bundle ID: `com.spyder.mobile`
    - SKU: `spyder-mobile`
 
-### 7.2 Build and send it
+### 7.2 Upload the client ids to EAS — do not skip this
+
+**`.env` never reaches a cloud build.** It is git-ignored, and Expo Build uploads
+a git archive of your commit. So a TestFlight build made without this step ships
+with **empty Google client ids**, and the sign-in button disables itself with
+"Sign-in is unavailable right now" — correct behaviour, baffling symptom.
+
+```bash
+cp .env .env.local                      # env:push reads .env.local, not .env
+eas env:push --environment preview
+eas env:list --environment preview      # expect all 8
+```
+
+Choose **plaintext** visibility for every value. `EXPO_PUBLIC_*` is inlined into
+the JS bundle and readable by anyone who unpacks the app, so marking them secret
+buys nothing.
+
+`.env*.local` is already git-ignored, so copying commits nothing.
+
+> Which environment? The `staging` **build profile** maps to the `preview`
+> **environment** (`"environment": "preview"` in eas.json), so staging builds
+> read the variables you just pushed. Repeat with
+> `--environment production` before the first production build.
+
+### 7.3 Build and send it
 
 ```bash
 eas build --profile staging --platform ios --auto-submit
@@ -448,7 +478,7 @@ Say **yes** to every credential prompt, including the APNs push key.
 
 Apple processes the build in 5–10 minutes and emails you.
 
-### 7.3 Create the tester group
+### 7.4 Create the tester group
 
 App Store Connect → your app → **TestFlight** → **+** beside **Internal
 Testing** → name the group → **+** beside **Testers** → add emails.
@@ -456,7 +486,7 @@ Testing** → name the group → **+** beside **Testers** → add emails.
 Internal testing needs **no Beta App Review**, so the build is available as soon
 as processing finishes. Up to 100 testers, no device registration.
 
-### 7.4 Testers install it
+### 7.5 Testers install it
 
 On an **iPhone or iPad**: install **TestFlight** from the App Store, open the
 invite email, tap the link, install.
@@ -608,9 +638,17 @@ re-signs your app with Google's key, so the SHA-1 changes. Add the **App signing
 key certificate** SHA-1 from Play Console → Release → Setup → App Integrity to
 the same Android OAuth client. It accepts several.
 
-**Every screen shows "Could not load…".** The API is unreachable. On the Windows
-emulator, `adb reverse tcp:3000 tcp:3000` must be active and the backend
-running. On the Mac, `EXPO_PUBLIC_API_URL` should be `https://staging.solvedblue.com`.
+**Every screen shows "Could not load…".** The API is unreachable.
+`EXPO_PUBLIC_API_URL` should be `https://staging.solvedblue.com` on every
+machine, Mac and Windows alike, and staging should be up. Nothing needs to run
+on port 3000 and no `adb reverse tcp:3000` is required — that was the old
+local-backend setup and is no longer used.
+
+If the build came from EAS rather than `npx expo run:android`, check the
+variables actually reached it: `.env` never leaves your machine. Run
+`eas env:list --environment preview` and expect all 8. A build made against the
+`development` environment gets nothing, because that environment is empty — see
+7.2.
 
 **`node` aborts with `Library not loaded: libsimdjson.*.dylib` on macOS.**
 Homebrew's `node` is linked against a `simdjson` that is no longer installed.
@@ -620,6 +658,23 @@ broken binary stops mattering. `brew uninstall node` to be rid of it.
 **`xcrun simctl list runtimes` prints `Install Failed: Authorization is
 required`.** Xcode tried to auto-install an extra component. Harmless if a real
 runtime is also listed on the following line — that is the one you will use.
+
+**`eas env:push` says `File .env.local does not exist`.** It reads `.env.local`,
+not `.env`. Copy it; `.env*.local` is already git-ignored, so nothing needs
+committing:
+
+```bash
+cp .env .env.local
+eas env:push --environment preview
+```
+
+Choose **plaintext** visibility for every `EXPO_PUBLIC_*` value. They are inlined
+into the JS bundle and readable by anyone who unpacks the app, so marking them
+secret buys nothing and makes them harder to inspect.
+
+**`eas env:push` or `eas build` says `Failed to resolve plugin for module
+"expo-router"`.** `node_modules` is missing — those commands evaluate the app
+config. Run `npm ci`.
 
 **Apple sign-in returns 404.** The backend is not deployed — see step 2 above.
 
