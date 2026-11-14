@@ -116,7 +116,21 @@
           "color": "#0A84FF"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Solvedblue to use the microphone so you can send a voice message in a conversation."
+        }
+      ],
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Solvedblue to use your photos so you can send a picture in a conversation.",
+          "cameraPermission": "Allow Solvedblue to use the camera so you can take a picture to send in a conversation."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

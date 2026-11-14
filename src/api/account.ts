@@ -197,3 +197,33 @@ export const billingApi = {
   /** Opens the Stripe billing portal for an existing subscription. */
   portal: () => api.post<{ url: string }>('/billing/portal').then((res) => res.data.url),
 };
+
+/**
+ * Why the backend refused a send, in words to show, mirroring
+ * spyder-web/src/api/billing.ts.
+ *
+ * These three are 403s about the account rather than about the message, so they
+ * get their own wording: the generic "couldn't send, try again" would invite
+ * someone to retry something that will keep failing until a plan is chosen or
+ * support unpauses them.
+ */
+export const BILLING_INACTIVE_MESSAGE = "Your plan isn't active. Choose a plan on Account.";
+export const SENDING_PAUSED_MESSAGE = 'Sending is paused by Solvedblue support.';
+export const PLATFORM_PAUSED_MESSAGE = 'Sending is paused for maintenance.';
+
+const blockCode = (error: unknown): unknown =>
+  (error as { response?: { data?: { code?: unknown } } } | null)?.response?.data?.code;
+
+/** The message for a refused send, or null when the error is not a send block. */
+export function sendBlockMessage(error: unknown): string | null {
+  switch (blockCode(error)) {
+    case 'billing_inactive':
+      return BILLING_INACTIVE_MESSAGE;
+    case 'sending_paused':
+      return SENDING_PAUSED_MESSAGE;
+    case 'platform_paused':
+      return PLATFORM_PAUSED_MESSAGE;
+    default:
+      return null;
+  }
+}

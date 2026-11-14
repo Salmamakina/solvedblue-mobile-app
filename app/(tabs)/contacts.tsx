@@ -16,7 +16,7 @@ import { Button } from '../../src/components/Button';
 import { Screen } from '../../src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { useTheme } from '../../src/theme/useTheme';
-import { prettyPhone, shortTime } from '../../src/utils/format';
+import { listTime, prettyPhone } from '../../src/utils/format';
 
 export default function ContactsScreen() {
   const { colors, type, space, radius } = useTheme();
@@ -145,7 +145,7 @@ export default function ContactsScreen() {
                 </Text>
                 <Text style={[type.caption, { color: colors.label2 }]} numberOfLines={1}>
                   {item.phone ? prettyPhone(item.phone) : item.email}
-                  {item.last_message_at ? ` · ${shortTime(item.last_message_at)}` : ''}
+                  {item.last_message_at ? ` · ${listTime(item.last_message_at)}` : ''}
                 </Text>
               </View>
               {/* Top-right, so the labels line up with the name rather than

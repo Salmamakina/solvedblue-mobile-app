@@ -19,7 +19,7 @@ import { Screen } from '../../src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useTheme } from '../../src/theme/useTheme';
-import { shortTime, threadTitle } from '../../src/utils/format';
+import { listTime, threadTitle } from '../../src/utils/format';
 
 /**
  * The team inbox. One list, filtered by the same five folders the web and the
@@ -218,7 +218,7 @@ export default function InboxScreen() {
                   <Badge label="Yours" tone="info" />
                 ) : null}
                 <Text style={[type.caption, { color: colors.label2 }]}>
-                  {shortTime(item.last_at)}
+                  {listTime(item.last_at)}
                 </Text>
               </View>
             </Pressable>

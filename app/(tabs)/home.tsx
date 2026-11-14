@@ -15,7 +15,7 @@ import {
 } from '../../src/components/useScrollToTop';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useTheme } from '../../src/theme/useTheme';
-import { shortTime, threadTitle } from '../../src/utils/format';
+import { listTime, threadTitle } from '../../src/utils/format';
 import {
   deltaNote,
   firstName,
@@ -242,7 +242,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <Text style={[type.caption, { color: colors.label2, marginLeft: space.sm }]}>
-                    {shortTime(thread.last_at)}
+                    {listTime(thread.last_at)}
                   </Text>
                 </Pressable>
               ))}

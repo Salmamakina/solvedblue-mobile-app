@@ -20,8 +20,14 @@ const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 const configuredUrl =
   envUrl || (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl || '';
 
+/**
+ * The bare origin, with no path. Stored files are addressed by the absolute
+ * path the server returns (`/api/media/<id>`), so they are joined to this
+ * rather than to `apiBaseUrl`, which would produce `/api/api/media/<id>`.
+ */
+export const apiOrigin = configuredUrl.replace(/\/+$/, '');
 /** Trailing slashes would produce //api, which some proxies treat as a different route. */
-export const apiBaseUrl = `${configuredUrl.replace(/\/+$/, '')}/api`;
+export const apiBaseUrl = `${apiOrigin}/api`;
 
 const api = axios.create({
   baseURL: apiBaseUrl,

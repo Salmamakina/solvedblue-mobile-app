@@ -109,6 +109,34 @@ export const type = {
   caption: { fontSize: 12, fontWeight: '400', lineHeight: 16 },
 } as const;
 
+/**
+ * The smallest line height that fits an emoji, as a multiple of the font size.
+ *
+ * The ramp above is ported from the web, where a tight line height costs
+ * nothing. On Android a `Text` with an explicit `lineHeight` clips any glyph
+ * taller than it, and emoji are taller than Latin text, so `footnote` (13/18,
+ * 1.38) and `caption` (12/16, 1.33) crop an emoji's top and bottom — the two
+ * styles used for the inbox preview and Home's "Waiting on you" preview, which
+ * are exactly the two places emoji were reported missing.
+ */
+const EMOJI_LINE_HEIGHT_RATIO = 1.45;
+
+/**
+ * One of the ramp's styles, with enough room for an emoji.
+ *
+ * For `Text` that renders what a contact actually sent. Everywhere else the
+ * ramp is used unchanged, so our own labels keep the web's tighter rhythm and
+ * only user content pays the extra pixels.
+ */
+export function emojiSafe<T extends { fontSize: number; lineHeight: number }>(
+  style: T
+): T & { lineHeight: number } {
+  return {
+    ...style,
+    lineHeight: Math.max(style.lineHeight, Math.ceil(style.fontSize * EMOJI_LINE_HEIGHT_RATIO)),
+  };
+}
+
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 export const radius = { sm: 6, md: 10, lg: 14, xl: 20, pill: 999 } as const;
