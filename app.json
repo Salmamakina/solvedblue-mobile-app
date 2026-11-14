@@ -130,7 +130,8 @@
           "photosPermission": "Allow Solvedblue to use your photos so you can send a picture in a conversation.",
           "cameraPermission": "Allow Solvedblue to use the camera so you can take a picture to send in a conversation."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

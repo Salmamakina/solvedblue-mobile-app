@@ -163,6 +163,15 @@ export const accountApi = {
 
   /** Admin only. */
   revokeKey: (id: string) => api.delete(`/account/api-keys/${id}`).then(() => undefined),
+  /**
+   * Records that this organization wants the API, for a plan that does not
+   * include it. Mirrors the web's `registerApiInterest`.
+   *
+   * The server keeps the first time it was asked (`COALESCE` on
+   * `api_interest_at`), so asking twice is not a second request.
+   */
+  registerApiInterest: () =>
+    api.post<{ ok: true; at: string }>('/account/api-interest').then((res) => ({ at: res.data.at })),
 
   /** What deleting this account would do, and whether a rule refuses it. */
   deletionPreview: () =>
