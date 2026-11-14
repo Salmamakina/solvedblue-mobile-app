@@ -127,6 +127,14 @@ export const contactsApi = {
   /** Flags a conversation by its address (a phone number or email), creating the contact if needed. */
   flag: (address: string, flagged: boolean) =>
     api.post<ContactRow>('/contacts/flag', { address, flagged }).then((res) => res.data),
+  /**
+   * Marks an address opted out: the same block a STOP reply sets.
+   *
+   * There is no endpoint to undo it, by design — an opt-out is the contact's
+   * decision, not ours — so any caller must confirm first.
+   */
+  optOut: (address: string) =>
+    api.post<{ opted_out: true }>('/contacts/opt-out', { address }).then((res) => res.data),
 
   /**
    * Adds many contacts at once. The rows are already mapped to contact fields,

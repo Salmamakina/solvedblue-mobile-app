@@ -79,4 +79,32 @@ export const inboxApi = {
   /** Needs the team_inbox feature; `null` unassigns. */
   assign: (contact: string, userId: string | null) =>
     api.post(actionPath(contact, 'assign'), { userId }).then(() => undefined),
+  /**
+   * The one thread for an address, or null when there is no conversation yet.
+   *
+   * There is no endpoint for a single thread, so this searches: `q` matches
+   * `phone_number` among other columns (`matched` in
+   * spyder-backend/src/services/inboxQuery.ts), and the exact address is then
+   * picked out of the page, because a substring match can return more than one
+   * — "555" matches every number containing it.
+   *
+   * The conversation screen needs it for the thread's flagged, closed, opted-out
+   * and assigned state, none of which is in the chat messages.
+   */
+  findByAddress: (address: string) =>
+    api
+      .get<InboxPage>('/inbox', {
+        params: { folder: 'all', q: address, limit: INBOX_PAGE_SIZE, offset: 0 },
+      })
+      .then(
+        (res) =>
+          res.data.threads.find(
+            (thread) =>
+              thread.phone_number === address ||
+              thread.contact === address.trim().toLowerCase()
+          ) ?? null
+      ),
 };
+
+/** react-query key for one conversation's thread state, by address. */
+export const INBOX_THREAD_QUERY_KEY = 'inbox-thread';
