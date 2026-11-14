@@ -1,7 +1,7 @@
 import * as Google from 'expo-auth-session/providers/google';
 import { useRouter } from 'expo-router';
 import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { authApi } from '../api/auth';
@@ -78,79 +78,102 @@ export function useGoogleSignIn(): GoogleSignIn {
     webClientId;
   const configured = Boolean(platformClientId) && firebaseConfigured;
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
+  const [request, , promptAsync] = Google.useAuthRequest({
     clientId: webClientId,
     iosClientId,
     androidClientId,
   });
 
-  /*
-   * react-hooks/set-state-in-effect is disabled for this effect, deliberately.
+  /**
+   * Google's id_token for our own session: Firebase first, then the backend.
    *
-   * `response` is state owned by expo-auth-session: it changes when the system
-   * browser comes back, which is exactly the "subscribe to an external system"
-   * case the rule's own documentation exempts. There is nowhere else to react
-   * to it, and the alternative — awaiting promptAsync() in signIn instead —
-   * would restructure the one flow in this app that has never been run end to
-   * end against a real Google client (see ROADMAP P0.1). Not worth rewriting
-   * blind to satisfy a linter.
+   * Split out of the flow below so it can be called from `signIn`'s awaited
+   * result rather than from an effect. See the comment on `signIn`.
    */
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!response) return;
-
-    if (response.type === 'success') {
-      const googleIdToken = response.params?.id_token ?? response.authentication?.idToken;
-      if (!googleIdToken) {
-        setError('Google did not return an identity token. Please try again.');
-        return;
-      }
+  const completeSignIn = useCallback(
+    async (googleIdToken: string) => {
       if (handled.current === googleIdToken) return;
       handled.current = googleIdToken;
 
       setExchanging(true);
       setError('');
 
-      void (async () => {
-        const auth = getFirebaseAuth();
-        try {
-          const credential = GoogleAuthProvider.credential(googleIdToken);
-          const result = await signInWithCredential(auth, credential);
-          const firebaseToken = await result.user.getIdToken();
+      const auth = getFirebaseAuth();
+      try {
+        const credential = GoogleAuthProvider.credential(googleIdToken);
+        const result = await signInWithCredential(auth, credential);
+        const firebaseToken = await result.user.getIdToken();
 
-          const { data } = await authApi.loginWithFirebase(firebaseToken);
-          await setAuth(data.token, data.user);
-          router.replace('/(tabs)/home');
-        } catch (err) {
-          setError(apiErrorMessage(err, 'Sign-in failed. Please try again.'));
-        } finally {
-          // The backend's JWT is the session now; the Firebase user is not needed.
-          await signOut(auth).catch(() => undefined);
-          setExchanging(false);
-        }
-      })();
-      return;
-    }
+        const { data } = await authApi.loginWithFirebase(firebaseToken);
+        // The store is what the root layout's guard watches, so setting it is
+        // what actually moves the app to Home. The replace below is for the
+        // case where the guard has already settled.
+        await setAuth(data.token, data.user);
+        router.replace('/(tabs)/home');
+      } catch (err) {
+        setError(apiErrorMessage(err, 'Sign-in failed. Please try again.'));
+      } finally {
+        // The backend's JWT is the session now; the Firebase user is not needed.
+        await signOut(auth).catch(() => undefined);
+        setExchanging(false);
+      }
+    },
+    [router, setAuth]
+  );
 
-    if (response.type === 'error') {
-      setError(response.error?.message || 'Could not sign in with Google.');
-      return;
-    }
-
-    if (!DISMISSED.has(response.type)) {
-      setError('Could not sign in with Google.');
-    }
-  }, [response, setAuth, router]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
+  /**
+   * Opens Google and finishes the exchange with whatever it hands back.
+   *
+   * The result is taken from `promptAsync()`'s promise rather than from the
+   * `response` state this hook used to watch in an effect. That change is the
+   * difference between this working and not, and the reason is specific:
+   *
+   * Expo Router owns deep linking. The redirect in a development build is
+   * `spyder://oauthredirect` — `makeRedirectUri` ignores its `native` option
+   * unless `executionEnvironment` is Standalone or Bare, and a build made with
+   * expo-dev-client reports StoreClient, the same as Expo Go. So the redirect
+   * is a URL with a path, Expo Router matches it as a route, finds nothing, and
+   * navigates to its Unmatched Route screen. That unmounts the sign-in screen
+   * and this hook with it, so the effect watching `response` never ran and the
+   * authorization code was dropped on the floor.
+   *
+   * A promise continuation does not care that the component unmounted: the
+   * exchange finishes, `setAuth` writes the session, and the root layout's
+   * guard moves the app to Home. The earlier comment here reasoned the other
+   * way round, but it was written before the flow had ever been run against a
+   * real Google client (ROADMAP P0.1).
+   */
   const signIn = useCallback(() => {
     setError('');
     if (!configured) {
       setError('Sign-in is unavailable right now. Please try again later.');
       return;
     }
-    void promptAsync();
-  }, [configured, promptAsync]);
+
+    void (async () => {
+      const result = await promptAsync();
+
+      if (result.type === 'success') {
+        const googleIdToken = result.params?.id_token ?? result.authentication?.idToken;
+        if (!googleIdToken) {
+          setError('Google did not return an identity token. Please try again.');
+          return;
+        }
+        await completeSignIn(googleIdToken);
+        return;
+      }
+
+      if (result.type === 'error') {
+        setError(result.error?.message || 'Could not sign in with Google.');
+        return;
+      }
+
+      // Dismissing the browser is a choice, not a failure.
+      if (!DISMISSED.has(result.type)) {
+        setError('Could not sign in with Google.');
+      }
+    })();
+  }, [completeSignIn, configured, promptAsync]);
 
   return {
     signIn,
