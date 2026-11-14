@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CAMPAIGNS_QUERY_KEY, campaignsApi, type Metrics } from '../../src/api/campaigns';
 import { apiErrorMessage } from '../../src/api/client';
@@ -21,7 +21,6 @@ import { percent, prettyPhone, shortTime } from '../../src/utils/format';
  */
 export default function CampaignScreen() {
   const { colors, type, space } = useTheme();
-  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const campaign = useQuery({
@@ -195,16 +194,11 @@ export default function CampaignScreen() {
           </View>
         </Card>
 
-        {/* The only way in is the campaigns list, so back is the one exit and
-            the header already provides it. Nothing else belongs here: starting
-            and stopping stay on the list, next to every other campaign. */}
-        <Text
-          accessibilityRole="link"
-          onPress={() => router.back()}
-          style={[type.footnote, { color: colors.blue, fontWeight: '600', textAlign: 'center' }]}
-        >
-          Back to campaigns
-        </Text>
+        {/* No back link here. The only way in is the campaigns list, so the
+            header's arrow is the one exit and a second control saying the same
+            thing just moved the exit somewhere you had to scroll to find.
+            Nothing else belongs here either: starting and stopping stay on the
+            list, next to every other campaign. */}
       </ScrollView>
     </Screen>
   );

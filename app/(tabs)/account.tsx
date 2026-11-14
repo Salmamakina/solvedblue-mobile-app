@@ -39,7 +39,6 @@ import { Screen } from '../../src/components/Screen';
 import { ErrorState, LoadingState } from '../../src/components/StateView';
 import { unregisterPushNotifications } from '../../src/notifications/push';
 import { useAuthStore } from '../../src/stores/authStore';
-import { THEME_OPTIONS, useThemeStore } from '../../src/stores/themeStore';
 import { useTheme } from '../../src/theme/useTheme';
 import { relativeTime } from '../../src/utils/format';
 
@@ -52,10 +51,8 @@ import { relativeTime } from '../../src/utils/format';
  * so those buttons open one the way Contact sales does.
  */
 export default function AccountScreen() {
-  const { colors, type, space, radius } = useTheme();
+  const { colors, type, space } = useTheme();
   const clearAuth = useAuthStore((s) => s.clearAuth);
-  const preference = useThemeStore((s) => s.preference);
-  const setPreference = useThemeStore((s) => s.setPreference);
   const queryClient = useQueryClient();
 
   const account = useQuery({ queryKey: [ACCOUNT_QUERY_KEY], queryFn: accountApi.get });
@@ -233,56 +230,12 @@ export default function AccountScreen() {
         {/* A Lines card used to sit here, listing the fleet phones. Only a
             platform admin can act on those, so for everyone else it was a
             read-only block of numbers in the middle of their own settings. */}
-        <Card title="Preferences">
-          <Text style={[type.footnote, { color: colors.label2, marginBottom: space.sm }]}>
-            Appearance
-          </Text>
-          <View
-            style={[
-              styles.segment,
-              { backgroundColor: colors.fill, borderRadius: radius.md, padding: 3 },
-            ]}
-          >
-            {THEME_OPTIONS.map(({ key, label }) => {
-              const active = key === preference;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => void setPreference(key)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={label}
-                  accessibilityState={{ selected: active }}
-                  style={({ pressed }) => [
-                    styles.segmentItem,
-                    {
-                      backgroundColor: active ? colors.bg2 : 'transparent',
-                      borderRadius: radius.sm,
-                      opacity: pressed && !active ? 0.6 : 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      type.footnote,
-                      {
-                        color: active ? colors.label : colors.label2,
-                        fontWeight: active ? '600' : '400',
-                      },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={[type.caption, { color: colors.label2, marginTop: space.sm }]}>
-            {preference === 'system'
-              ? 'Following your device appearance.'
-              : `Always ${preference}.`}
-          </Text>
-        </Card>
-
+        {/* An Appearance picker used to sit here, offering Light, Dark and
+            System. It is gone: appearance follows the phone now. Three paths
+            meant three sets of surfaces to keep the brand legible on, and both
+            platforms treat appearance as a system-wide choice that an app
+            overriding it is the odd one out. Change it in iOS or Android
+            Settings and the app follows. */}
         <Button label="Sign out" variant="secondary" onPress={signOut} />
 
         {/* Last on the screen, and the only thing below Sign out, so the
@@ -983,8 +936,6 @@ const styles = StyleSheet.create({
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   consequence: { flexDirection: 'row', alignItems: 'flex-start' },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  segment: { flexDirection: 'row', gap: 3 },
-  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 38 },
   copyable: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -8,7 +8,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DEV_BYPASS_AUTH } from '../src/config/devBypass';
 import { usePushNotifications } from '../src/notifications/usePushNotifications';
 import { useAuthStore } from '../src/stores/authStore';
-import { useThemeStore } from '../src/stores/themeStore';
 import { useTheme } from '../src/theme/useTheme';
 
 const queryClient = new QueryClient({
@@ -86,25 +85,23 @@ export default function RootLayout() {
   const { colors, dark } = useTheme();
   const hydrateAuth = useAuthStore((s) => s.hydrate);
   const authReady = useAuthStore((s) => s.hydrated);
-  const hydrateTheme = useThemeStore((s) => s.hydrate);
-  const themeReady = useThemeStore((s) => s.hydrated);
   // A ref, not state: nothing renders differently because hydration has begun,
   // and setting state here would cascade a second render before the first
-  // paint. `hydrated` on each store is what the UI actually waits on.
+  // paint. `hydrated` on the store is what the UI actually waits on.
   const started = useRef(false);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     void hydrateAuth();
-    void hydrateTheme();
-  }, [hydrateAuth, hydrateTheme]);
+  }, [hydrateAuth]);
 
   useAuthGuard();
 
-  // Both stores must be read before the first paint, otherwise the app flashes
-  // the signed-out screen or the wrong appearance on every cold start.
-  const ready = authReady && themeReady;
+  // The stored session must be read before the first paint, otherwise the app
+  // flashes the signed-out screen on every cold start. Appearance no longer
+  // waits on anything: useColorScheme has the device's setting synchronously.
+  const ready = authReady;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -119,14 +116,19 @@ export default function RootLayout() {
                 headerTitleStyle: { color: colors.label },
                 headerTintColor: colors.blue,
                 contentStyle: { backgroundColor: colors.bg },
+                // The back control is the arrow alone, on every screen. Each
+                // screen used to name where it came from ("Back", "Contacts",
+                // "Account"), which on a narrow phone competed with the title
+                // for the same row and truncated it. One rule here rather than
+                // one per screen, so a new screen inherits it.
+                //
+                // iOS only in effect: Android never drew the label.
+                headerBackButtonDisplayMode: 'minimal',
               }}
             >
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen
-                name="chat/[phone]"
-                options={{ title: 'Conversation', headerBackTitle: 'Back' }}
-              />
+              <Stack.Screen name="chat/[phone]" options={{ title: 'Conversation' }} />
               {/* Presented as sheets: both are short tasks you come back from,
                   not places in the tab structure. */}
               <Stack.Screen
@@ -151,21 +153,12 @@ export default function RootLayout() {
               {/* Pushed from their tab's list, and the only way in. Both are
                   places you read and come back from, not short tasks, so
                   neither is a sheet. */}
-              <Stack.Screen
-                name="campaigns/[id]"
-                options={{ title: 'Campaign', headerBackTitle: 'Campaigns' }}
-              />
-              <Stack.Screen
-                name="contacts/[id]"
-                options={{ title: 'Contact', headerBackTitle: 'Contacts' }}
-              />
-              <Stack.Screen
-                name="organization/members"
-                options={{ title: 'Members', headerBackTitle: 'Account' }}
-              />
+              <Stack.Screen name="campaigns/[id]" options={{ title: 'Campaign' }} />
+              <Stack.Screen name="contacts/[id]" options={{ title: 'Contact' }} />
+              <Stack.Screen name="organization/members" options={{ title: 'Members' }} />
               <Stack.Screen
                 name="organization/invites"
-                options={{ title: 'Pending invites', headerBackTitle: 'Account' }}
+                options={{ title: 'Pending invites' }}
               />
             </Stack>
           ) : (
