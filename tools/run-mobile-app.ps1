@@ -41,6 +41,10 @@ param(
     [string]$AppDir   = 'D:\spyder-mobile-app',
     [int]   $Port     = 8081,
     [string]$Package  = 'com.spyder.mobile',
+    # 0.3 made a 822px-tall window on an 816px work area, so the bottom of the
+    # phone sat under the taskbar. 0.28 fits with room to spare;
+    # fix-emulator-window.ps1 still shrinks it if a display is smaller again.
+    [double]$Scale    = 0.28,
     [switch]$Restart          # force a clean emulator restart
 )
 
@@ -70,7 +74,7 @@ if ($running) {
     Start-Process $emu -ArgumentList @(
         '-avd', $Avd, '-gpu', 'host',
         '-no-snapshot', '-no-audio', '-no-boot-anim',
-        '-scale', '0.3'
+        '-scale', "$Scale"
     )
 }
 
