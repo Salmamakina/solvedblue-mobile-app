@@ -129,8 +129,12 @@ export default function RootLayout() {
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="chat/[phone]" options={{ title: 'Conversation' }} />
-              {/* Presented as sheets: both are short tasks you come back from,
-                  not places in the tab structure. */}
+              {/* Presented as sheets: each is a short task you come back from,
+                  not a place in the tab structure. */}
+              <Stack.Screen
+                name="inbox/new"
+                options={{ title: 'New message', presentation: 'modal' }}
+              />
               <Stack.Screen
                 name="contacts/new"
                 options={{ title: 'New contact', presentation: 'modal' }}

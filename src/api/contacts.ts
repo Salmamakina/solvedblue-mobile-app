@@ -71,6 +71,23 @@ export interface SheetTable {
   rows: string[][];
 }
 
+/** What a first message to an address will do, from GET /contacts/send-preview. */
+export interface SendPreview {
+  opted_out: boolean;
+  first_contact: boolean;
+  /** ISO time a first message waits for (quiet hours); null when it goes out right away. */
+  quiet_until: string | null;
+}
+
+/** What one message to a selection of contacts did, from POST /contacts/send. */
+export interface QuickSendResult {
+  campaign_id: string;
+  recipients: number;
+  skipped_opted_out: number;
+  /** Contacts with an email but no phone number are left out of a quick send. */
+  skipped_no_phone: number;
+}
+
 export const CONTACTS_QUERY_KEY = 'contacts';
 export const CONTACTS_PAGE_SIZE = 25;
 
@@ -127,4 +144,46 @@ export const contactsApi = {
    */
   googleSheet: (url: string) =>
     api.post<SheetTable>('/contacts/google-sheet', { url }).then((res) => res.data),
+  /**
+   * What sending to this address would do, before anything is sent: whether it
+   * has opted out, whether it is a first contact, and when a first message
+   * would actually go out.
+   *
+   * Worth asking because a first message to a new contact is held for quiet
+   * hours, so without this the app would say "sent" and nothing would appear
+   * for hours.
+   */
+  sendPreview: (to: string) =>
+    api.get<SendPreview>('/contacts/send-preview', { params: { to } }).then((res) => res.data),
+  /**
+   * One plain-text message to the chosen contacts, as a campaign the server
+   * creates. 400 `no_recipients`, 403 `{ code }` when sending is blocked.
+   *
+   * The result names what it skipped, which the caller has to show: "sent to 40
+   * of 50" with no reason is the kind of thing that gets debugged twice.
+   */
+  send: (contactIds: string[], message: string) =>
+    api
+      .post<QuickSendResult>('/contacts/send', { contact_ids: contactIds, message })
+      .then((res) => res.data),
 };
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_CHARS = /^[\d\s()+\-.]+$/;
+
+/**
+ * Whether an address can be sent to: a phone number of 7 to 15 digits in any
+ * common format, or an email address. Ported from `isSendableAddress` in
+ * spyder-web/src/pages/inbox/NewMessageDialog.tsx.
+ *
+ * Deliberately loose. The server normalises and has the final say; this only
+ * decides when to enable the Send button, so it must not reject something the
+ * server would have accepted.
+ */
+export function isSendableAddress(value: string): boolean {
+  const address = value.trim();
+  if (EMAIL.test(address)) return true;
+  if (!PHONE_CHARS.test(address)) return false;
+  const digits = address.replace(/\D/g, '').length;
+  return digits >= 7 && digits <= 15;
+}

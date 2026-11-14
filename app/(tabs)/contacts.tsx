@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { apiErrorMessage } from '../../src/api/client';
 import {
   CONTACT_FILTERS,
@@ -13,20 +13,27 @@ import {
 import { AppHeader } from '../../src/components/AppHeader';
 import { Badge } from '../../src/components/Badge';
 import { Button } from '../../src/components/Button';
+import { FilterChips } from '../../src/components/FilterChips';
 import { Screen } from '../../src/components/Screen';
+import { SearchField } from '../../src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
+import { useDebounced } from '../../src/components/useDebounced';
 import { useTheme } from '../../src/theme/useTheme';
 import { listTime, prettyPhone } from '../../src/utils/format';
 
 export default function ContactsScreen() {
-  const { colors, type, space, radius } = useTheme();
+  const { colors, type, space } = useTheme();
   const router = useRouter();
   const [filter, setFilter] = useState<ContactFilter>('all');
-  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const query = useDebounced(search.trim());
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: [CONTACTS_QUERY_KEY, filter, query],
     queryFn: () => contactsApi.list({ filter, q: query }),
+    // The previous results stay while the next ones load, so the list does not
+    // empty and flash a spinner on every pause in typing.
+    placeholderData: (previous) => previous,
   });
 
   return (
@@ -46,55 +53,24 @@ export default function ContactsScreen() {
             style={styles.action}
           />
         </View>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
+        <SearchField
+          value={search}
+          onChangeText={setSearch}
+          label="Search contacts"
           placeholder="Search name, phone or email"
-          placeholderTextColor={colors.label2}
-          autoCapitalize="none"
-          accessibilityLabel="Search contacts"
-          style={{
-            backgroundColor: colors.bg2,
-            borderColor: colors.sep,
-            borderWidth: StyleSheet.hairlineWidth,
-            borderRadius: radius.md,
-            color: colors.label,
-            padding: space.md,
-            fontSize: 15,
-            minHeight: 44,
-          }}
         />
-        <View style={styles.chips}>
-          {CONTACT_FILTERS.map(({ key, label }) => {
-            const active = key === filter;
-            const count = data?.counts?.[key];
-            return (
-              <Pressable
-                key={key}
-                onPress={() => setFilter(key)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-                style={{
-                  backgroundColor: active ? colors.blue : colors.fill,
-                  borderRadius: radius.pill,
-                  paddingHorizontal: space.md,
-                  paddingVertical: space.sm,
-                }}
-              >
-                <Text
-                  style={[
-                    type.footnote,
-                    { color: active ? '#FFFFFF' : colors.label2, fontWeight: '600' },
-                  ]}
-                >
-                  {label}
-                  {count ? ` ${count}` : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </View>
+
+      {/* Same scrolling line as the Inbox folders, so the two lists filter the
+          same way and a longer label never costs the list a row of height. */}
+      <FilterChips
+        chips={CONTACT_FILTERS}
+        selected={filter}
+        onSelect={setFilter}
+        counts={data?.counts}
+        label="Filters"
+        style={{ flexGrow: 0, marginTop: space.md }}
+      />
 
       {isLoading ? (
         <LoadingState label="Loading contacts" />
@@ -165,7 +141,6 @@ export default function ContactsScreen() {
 const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8 },
   action: { flex: 1 },
-  chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   row: { flexDirection: 'row', alignItems: 'flex-start' },
   tagRow: { alignItems: 'flex-end', gap: 4 },
   grow: { flexGrow: 1 },
