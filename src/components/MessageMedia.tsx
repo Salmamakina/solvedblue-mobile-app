@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { mediaSrc } from '../api/media';
 import { useTheme } from '../theme/useTheme';
+import { useRemoteAudio } from './useRemoteAudio';
 import { clock } from './useVoiceRecorder';
 
 /** How wide a bubble may be, matching the text bubbles in the thread. */
@@ -83,28 +83,23 @@ export function MessagePicture({ url }: { url: string }) {
  */
 export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
   const { colors, type, radius, space } = useTheme();
-  const player = useAudioPlayer(mediaSrc(url));
-  const status = useAudioPlayerStatus(player);
+  // Downloaded, then played from disk: streaming the URL works on Android and
+  // fails on iOS, for the three reasons written out in useRemoteAudio.
+  const audio = useRemoteAudio({
+    uri: mediaSrc(url),
+    // `/api/media/<uuid>` with no extension, and iOS needs one. The id keeps
+    // the cached file matched to the message it belongs to.
+    name: `media-${url.split('/').pop() || 'voice'}.m4a`,
+  });
 
   const foreground = mine ? '#FFFFFF' : colors.label;
   const muted = mine ? 'rgba(255,255,255,0.75)' : colors.label2;
   // `duration` is 0 until the file has loaded; showing the elapsed time while
   // playing and the total when idle is what a messaging app does.
-  const seconds = status.playing ? status.currentTime : status.duration;
-  // A file the player cannot fetch or decode used to leave a disabled button
-  // and no explanation, which looks the same as an app with no sound. The
-  // player reports why, so say so.
-  const failed = status.error !== null && !status.isLoaded;
-
-  function toggle() {
-    if (status.playing) {
-      player.pause();
-      return;
-    }
-    // A finished player sits at the end, so playing again would do nothing.
-    if (status.duration > 0 && status.currentTime >= status.duration) player.seekTo(0);
-    player.play();
-  }
+  const seconds = audio.seconds;
+  // A file that cannot be fetched or decoded used to leave a disabled button
+  // and no explanation, which looks the same as an app with no sound.
+  const failed = audio.failed;
 
   return (
     <View
@@ -120,22 +115,22 @@ export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
       ]}
     >
       <Pressable
-        onPress={toggle}
-        disabled={!status.isLoaded}
+        onPress={audio.toggle}
+        disabled={audio.loading}
         accessibilityRole="button"
         accessibilityLabel={
           failed
-            ? 'Voice message could not be played'
-            : status.playing
+            ? 'Voice message could not be played. Try again'
+            : audio.playing
               ? 'Pause voice message'
               : 'Play voice message'
         }
-        accessibilityState={{ disabled: !status.isLoaded, busy: !status.isLoaded && !failed }}
+        accessibilityState={{ disabled: audio.loading, busy: audio.loading }}
         hitSlop={space.sm}
-        style={({ pressed }) => ({ opacity: !status.isLoaded ? 0.5 : pressed ? 0.7 : 1 })}
+        style={({ pressed }) => ({ opacity: audio.loading ? 0.5 : pressed ? 0.7 : 1 })}
       >
         <Ionicons
-          name={failed ? 'alert-circle' : status.playing ? 'pause-circle' : 'play-circle'}
+          name={failed ? 'refresh-circle' : audio.playing ? 'pause-circle' : 'play-circle'}
           size={32}
           color={foreground}
           accessible={false}
@@ -143,7 +138,13 @@ export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
       </Pressable>
       <Ionicons name="mic-outline" size={16} color={muted} accessible={false} />
       <Text style={[type.footnote, { color: muted, fontVariant: ['tabular-nums'] }]}>
-        {failed ? 'Unavailable' : status.isLoaded ? clock(Math.round(seconds)) : '--:--'}
+        {failed
+          ? 'Tap to retry'
+          : audio.loading
+            ? '· · ·'
+            : audio.ready
+              ? clock(Math.round(seconds))
+              : 'Play'}
       </Text>
     </View>
   );
