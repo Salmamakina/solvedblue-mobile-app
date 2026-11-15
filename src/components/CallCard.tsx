@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { callRecordingSource } from '../api/calls';
 import type { ChatMessage } from '../api/messages';
 import { useTheme } from '../theme/useTheme';
+import { useRemoteAudio } from './useRemoteAudio';
 import { clock } from './useVoiceRecorder';
 
 /**
@@ -65,47 +65,25 @@ export function callLabel(message: ChatMessage): string {
  */
 export function CallCard({ message }: { message: ChatMessage }) {
   const { colors, type, space, radius } = useTheme();
-  const [open, setOpen] = useState(false);
-  const [source] = useState(() => callRecordingSource(message.id));
 
-  const player = useAudioPlayer(open ? source : null);
-  const status = useAudioPlayerStatus(player);
-
-  // Autoplay once, when the file that the first tap asked for has loaded. The
-  // tap was the intent to listen; making it a second tap after an unannounced
-  // wait would be a worse trade than a short delay.
+  // Built once per card. The recording is fetched on the first tap and not
+  // before: a thread can hold a dozen calls, and `GET /api/calls/:id/recording`
+  // streams a whole file, so preparing every card on render would download the
+  // lot to draw a row of play buttons.
   //
-  // A ref rather than state: nothing on screen depends on whether this has
-  // happened, and setting state from an effect would cost a second render for
-  // a latch only the effect reads.
-  const autoplayed = useRef(false);
-  useEffect(() => {
-    if (open && status.isLoaded && !autoplayed.current) {
-      autoplayed.current = true;
-      player.play();
-    }
-  }, [open, player, status.isLoaded]);
+  // `.mp3` because that is what the proxy asks the provider for and what it
+  // answers with (`res.type('audio/mpeg')` in routes/calls.ts), and because on
+  // iOS the extension is what tells AVFoundation how to read the file.
+  const [source] = useState(() => {
+    const authed = callRecordingSource(message.id);
+    return authed ? { ...authed, name: `call-${message.id}.mp3` } : null;
+  });
+  const audio = useRemoteAudio(source);
 
   const inbound = message.call_direction === 'in';
   const label = callLabel(message);
   const playable = message.call_has_recording === true && source !== null;
-  const failed = open && status.error !== null && !status.isLoaded;
-  const loading = open && !status.isLoaded && !failed;
-  const elapsed = status.playing ? status.currentTime : status.duration;
-
-  function toggle() {
-    if (!open) {
-      setOpen(true);
-      return;
-    }
-    if (status.playing) {
-      player.pause();
-      return;
-    }
-    // A finished player sits at the end, so playing again would do nothing.
-    if (status.duration > 0 && status.currentTime >= status.duration) void player.seekTo(0);
-    player.play();
-  }
+  const { failed, loading } = audio;
 
   return (
     <View style={inbound ? styles.theirs : styles.mine}>
@@ -133,7 +111,7 @@ export function CallCard({ message }: { message: ChatMessage }) {
 
         {playable ? (
           <Pressable
-            onPress={toggle}
+            onPress={audio.toggle}
             disabled={loading}
             accessibilityRole="button"
             accessibilityLabel={
@@ -154,10 +132,10 @@ export function CallCard({ message }: { message: ChatMessage }) {
             <Ionicons
               name={
                 failed
-                  ? 'alert-circle'
+                  ? 'refresh-circle'
                   : loading
                     ? 'ellipsis-horizontal'
-                    : status.playing
+                    : audio.playing
                       ? 'pause-circle'
                       : 'play-circle'
               }
@@ -172,11 +150,11 @@ export function CallCard({ message }: { message: ChatMessage }) {
               ]}
             >
               {failed
-                ? "Couldn't load the recording"
+                ? "Couldn't load it. Tap to retry"
                 : loading
                   ? 'Loading…'
-                  : status.isLoaded
-                    ? clock(Math.round(elapsed))
+                  : audio.ready
+                    ? clock(Math.round(audio.seconds))
                     : message.call_status === 'voicemail'
                       ? 'Play voicemail'
                       : 'Play recording'}
