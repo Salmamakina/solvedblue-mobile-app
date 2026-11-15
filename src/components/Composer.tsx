@@ -1,35 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useCallback } from 'react';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { contentTypeOf, MAX_MEDIA_BYTES, type LocalFile, type MediaKind } from '../api/media';
 import { useTheme } from '../theme/useTheme';
 import { emojiSafe } from '../theme/tokens';
 import { clock, useVoiceRecorder } from './useVoiceRecorder';
 
-/**
- * The emoji the web's composer offers, in the web's order
- * (EMOJIS in spyder-web/src/pages/inbox/Composer.tsx).
- *
- * Lower value on a phone than in a browser, because the system keyboard already
- * has an emoji key. It is here so the two apps offer the same set, and because
- * the keyboard's emoji panel costs a mode switch mid-sentence.
+/*
+ * The emoji panel the web's composer has (EMOJIS in
+ * spyder-web/src/pages/inbox/Composer.tsx) is deliberately not here. On a phone
+ * the system keyboard already has an emoji key, one tap from the field, so a
+ * second grid of 32 emoji was a button in the row and a drawer over the thread
+ * to reach what the keyboard was already offering. The row has three controls
+ * now — picture, microphone, send — and the microphone has the slot the emoji
+ * button used to hold.
  */
-const EMOJIS = [
-  '😀', '😂', '😊', '😍', '😘', '😎', '🤔', '😅',
-  '😢', '😮', '🙏', '👍', '👎', '👏', '🙌', '💪',
-  '👋', '🤝', '❤️', '🔥', '🎉', '✅', '❗', '💯',
-  '🏠', '🔑', '📅', '📞', '💬', '📍', '💰', '🚗',
-];
 
 export interface Attachment extends LocalFile {
   kind: MediaKind;
@@ -54,12 +41,14 @@ interface ComposerProps {
 }
 
 /**
- * The message composer: text, an emoji panel, a picture and a voice message.
+ * The message composer: a field, a picture, a voice message and send.
  *
- * Ported from spyder-web/src/pages/inbox/Composer.tsx, including which controls
- * appear when. The microphone replaces nothing — on the web it is hidden once
- * there is something to send, and the same rule applies here, so the row never
- * holds both a record button and a send button competing for the same tap.
+ * Ported from spyder-web/src/pages/inbox/Composer.tsx, with one difference that
+ * matters: the microphone and the send button each keep their own place. On the
+ * web the microphone is hidden once there is something to send, so the right
+ * hand control changes meaning as you type. Here the two tools sit to the left
+ * of the field and send sits to the right of it, always in the same place, so
+ * the button under your thumb is the one you meant.
  */
 export function Composer({
   value,
@@ -74,7 +63,6 @@ export function Composer({
   accessibilityLabel,
 }: ComposerProps) {
   const { colors, type, space, radius } = useTheme();
-  const [emojisOpen, setEmojisOpen] = useState(false);
 
   const onRecorded = useCallback(
     (file: { uri: string; mimeType: string }) => onAttach({ ...file, kind: 'audio' }),
@@ -129,14 +117,6 @@ export function Composer({
     onAttach({ uri: asset.uri, mimeType: asset.mimeType ?? null, kind: 'image' });
   }
 
-  function addEmoji(emoji: string) {
-    // Appended rather than inserted at the cursor: React Native gives no
-    // reliable selection offset for a controlled multiline TextInput across
-    // both platforms, and a misplaced insert is worse than one at the end.
-    onChangeText(value + emoji);
-    setEmojisOpen(false);
-  }
-
   const toolColor = optedOut ? colors.label2 : colors.blue;
 
   return (
@@ -172,29 +152,6 @@ export function Composer({
             <Ionicons name="close-circle" size={24} color={colors.label2} />
           </Pressable>
         </View>
-      ) : null}
-
-      {emojisOpen ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          accessibilityRole="menu"
-          accessibilityLabel="Emojis"
-          style={{ borderBottomColor: colors.sep, borderBottomWidth: StyleSheet.hairlineWidth }}
-          contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: space.xs }}
-        >
-          {EMOJIS.map((emoji) => (
-            <Pressable
-              key={emoji}
-              onPress={() => addEmoji(emoji)}
-              accessibilityRole="button"
-              accessibilityLabel={`Add ${emoji}`}
-              style={({ pressed }) => [styles.emoji, { opacity: pressed ? 0.5 : 1 }]}
-            >
-              <Text style={styles.emojiGlyph}>{emoji}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
       ) : null}
 
       {recorder.recording ? (
@@ -247,17 +204,19 @@ export function Composer({
             </Pressable>
           ) : null}
 
-          <Pressable
-            onPress={() => setEmojisOpen(!emojisOpen)}
-            disabled={optedOut}
-            accessibilityRole="button"
-            accessibilityLabel="Add an emoji"
-            accessibilityState={{ expanded: emojisOpen, disabled: optedOut }}
-            hitSlop={space.sm}
-            style={({ pressed }) => [styles.tool, { opacity: optedOut ? 0.4 : pressed ? 0.6 : 1 }]}
-          >
-            <Ionicons name="happy-outline" size={24} color={toolColor} />
-          </Pressable>
+          {/* The microphone, in the slot the emoji button used to hold. Here
+              rather than on the right so it never trades places with send. */}
+          {canAttach ? (
+            <Pressable
+              onPress={recorder.start}
+              accessibilityRole="button"
+              accessibilityLabel="Record a voice message"
+              hitSlop={space.sm}
+              style={({ pressed }) => [styles.tool, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Ionicons name="mic-outline" size={24} color={toolColor} />
+            </Pressable>
+          ) : null}
 
           <TextInput
             value={value}
@@ -267,8 +226,8 @@ export function Composer({
             editable={!optedOut}
             multiline
             accessibilityLabel={accessibilityLabel}
-            // emojiSafe: this holds an emoji the moment the panel is used, and
-            // the ramp's body line height crops one on Android.
+            // emojiSafe: the keyboard's emoji key puts one in here, and the
+            // ramp's body line height crops an emoji on Android.
             style={[
               emojiSafe(type.body),
               {
@@ -284,37 +243,26 @@ export function Composer({
             ]}
           />
 
-          {/* The microphone gives way to Send as soon as there is something to
-              send, so the two never sit side by side. */}
-          {canAttach && !ready ? (
-            <Pressable
-              onPress={recorder.start}
-              accessibilityRole="button"
-              accessibilityLabel="Record a voice message"
-              hitSlop={space.sm}
-              style={({ pressed }) => [styles.tool, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Ionicons name="mic-outline" size={24} color={toolColor} />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={onSend}
-              disabled={!canSend}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              accessibilityState={{ disabled: !canSend, busy: sending }}
-              style={({ pressed }) => [
-                styles.send,
-                {
-                  backgroundColor: colors.blue,
-                  borderRadius: radius.pill,
-                  opacity: !canSend ? 0.4 : pressed ? 0.8 : 1,
-                },
-              ]}
-            >
-              <Ionicons name="arrow-up" size={20} color="#FFFFFF" accessible={false} />
-            </Pressable>
-          )}
+          {/* Send keeps the right hand side whether or not there is anything
+              to send yet: dimmed until there is, rather than absent, so the
+              thing you reach for while typing is already where you look. */}
+          <Pressable
+            onPress={onSend}
+            disabled={!canSend}
+            accessibilityRole="button"
+            accessibilityLabel="Send"
+            accessibilityState={{ disabled: !canSend, busy: sending }}
+            style={({ pressed }) => [
+              styles.send,
+              {
+                backgroundColor: colors.blue,
+                borderRadius: radius.pill,
+                opacity: !canSend ? 0.4 : pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="arrow-up" size={20} color="#FFFFFF" accessible={false} />
+          </Pressable>
         </View>
       )}
 
@@ -343,10 +291,6 @@ const styles = StyleSheet.create({
   },
   preview: { width: 56, height: 56 },
   voiceChip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 },
-  emoji: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  // Line height well clear of the glyph: an emoji at this size is the whole
-  // content of the button, so clipping it would leave an empty square.
-  emojiGlyph: { fontSize: 26, lineHeight: 34 },
   recDot: { width: 10, height: 10, borderRadius: 5 },
   recAction: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
 });

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
 import { INBOX_BADGE_QUERY_KEY, inboxApi } from '../../src/api/inbox';
-import { useAuthStore } from '../../src/stores/authStore';
+// import { useAuthStore } from '../../src/stores/authStore';
 import { useTheme } from '../../src/theme/useTheme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -23,7 +23,8 @@ function tabIcon(name: IconName) {
 
 export default function TabsLayout() {
   const { colors } = useTheme();
-  const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true);
+  // TEMPORARY: Campaigns is hidden from everyone, so nothing reads this.
+  // const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true);
 
   // Unread conversations, not every conversation needing a reply: the badge is
   // there to say "there is something new you have not seen".
@@ -81,7 +82,10 @@ export default function TabsLayout() {
         options={{
           title: 'Campaigns',
           tabBarIcon: tabIcon('send-outline'),
-          href: isPlatformAdmin ? undefined : null,
+          // TEMPORARY: hidden from platform admins too, so the bar is the five
+          // customer tabs. Put the line below back to restore the admin tab.
+          // href: isPlatformAdmin ? undefined : null,
+          href: null,
         }}
       />
     </Tabs>

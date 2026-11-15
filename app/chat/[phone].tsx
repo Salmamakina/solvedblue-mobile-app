@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -32,6 +33,7 @@ import {
   type ChatMessage,
 } from '../../src/api/messages';
 import { MEMBERS_QUERY_KEY, organizationsApi } from '../../src/api/organizations';
+import { CallCard } from '../../src/components/CallCard';
 import { Composer, type Attachment } from '../../src/components/Composer';
 import { Menu, type MenuItem } from '../../src/components/Menu';
 import { MessagePicture, MessageVoice } from '../../src/components/MessageMedia';
@@ -67,6 +69,8 @@ function receiptText(message: ChatMessage): string | null {
 export default function ChatScreen() {
   const { colors, type, space, radius } = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
+  const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const params = useLocalSearchParams<{ phone: string; name?: string }>();
   const phone = params.phone ?? '';
@@ -174,9 +178,14 @@ export default function ChatScreen() {
       if (!current) throw new Error('No conversation yet');
       return runAction(current, action);
     },
-    onSuccess: () => {
+    onSuccess: (_result, action) => {
       refresh();
       void queryClient.invalidateQueries({ queryKey: [CONTACTS_QUERY_KEY] });
+      // Closing a conversation is a way of saying "done with this one", so it
+      // leaves rather than sitting on a thread that has just dropped out of
+      // every folder but Closed. The other actions all leave you somewhere you
+      // still want to be, so they stay put.
+      if (action === 'close') router.replace('/(tabs)/inbox');
     },
     onError: (err) => Alert.alert('Conversation', apiErrorMessage(err, 'Could not do that')),
   });
@@ -316,6 +325,23 @@ export default function ChatScreen() {
     }
   }, [messages.length]);
 
+  /**
+   * Puts the newest message back in view, animated, for the moments where the
+   * thread would otherwise stay where it was: pressing send, and the keyboard
+   * opening. The effect above only fires when the number of messages changes,
+   * which is after the round trip — too late to answer the tap.
+   */
+  const scrollToLatest = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
+
+  useEffect(() => {
+    // keyboardDidShow, not WillShow: Android only emits the former, and by then
+    // the list has already been resized by the KeyboardAvoidingView.
+    const subscription = Keyboard.addListener('keyboardDidShow', scrollToLatest);
+    return () => subscription.remove();
+  }, [scrollToLatest]);
+
   if (isLoading) return <LoadingState label="Loading conversation" />;
   if (error) {
     return (
@@ -328,9 +354,24 @@ export default function ChatScreen() {
 
   return (
     <Screen edgeToEdge>
+      {/*
+       * `behavior` on both platforms, not just iOS. An Expo app is edge-to-edge
+       * on Android, which means the window no longer resizes when the keyboard
+       * opens: `adjustResize` in the manifest has nothing left to resize, so a
+       * KeyboardAvoidingView with no behavior did nothing and the keyboard came
+       * up over the composer. `padding` lifts the whole bottom of the screen —
+       * the field, the tools and the send button together — and the list above
+       * it shrinks, so what is being typed stays in view.
+       *
+       * keyboardVerticalOffset is the header height: the keyboard frame is
+       * measured from the top of the screen, so without it the padding
+       * overshoots by the height of the navigation bar above the thread.
+       * https://docs.expo.dev/guides/keyboard-handling/
+       */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
+        keyboardVerticalOffset={headerHeight}
       >
         <FlatList
           ref={listRef}
@@ -366,15 +407,26 @@ export default function ChatScreen() {
             const text = messageText(item);
             const side = mine ? styles.mine : styles.theirs;
 
+            const stamp = showStamp ? (
+              <Text style={[type.caption, { color: colors.label2, textAlign: 'center' }]}>
+                {stampTime(at)}
+              </Text>
+            ) : null;
+
+            // A call is not a message: no bubble, no delivery receipt, no retry.
+            // It gets its own card, with the recording or voicemail to play.
+            if (item.type === 'call') {
+              return (
+                <View style={{ gap: space.xs }}>
+                  {stamp}
+                  <CallCard message={item} />
+                </View>
+              );
+            }
+
             return (
               <View style={{ gap: space.xs }}>
-                {showStamp ? (
-                  <Text
-                    style={[type.caption, { color: colors.label2, textAlign: 'center' }]}
-                  >
-                    {stampTime(at)}
-                  </Text>
-                ) : null}
+                {stamp}
 
                 {item.media_url && item.media_kind === 'image' ? (
                   <View style={side}>
@@ -485,7 +537,11 @@ export default function ChatScreen() {
           onChangeText={setDraft}
           attachment={attachment}
           onAttach={setAttachment}
-          onSend={() => send.mutate()}
+          onSend={() => {
+            // Before the request, not after it: the thread moves on the tap.
+            scrollToLatest();
+            send.mutate();
+          }}
           sending={send.isPending}
           viaText={viaText}
           optedOut={optedOut}

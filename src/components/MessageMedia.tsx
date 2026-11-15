@@ -91,6 +91,10 @@ export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
   // `duration` is 0 until the file has loaded; showing the elapsed time while
   // playing and the total when idle is what a messaging app does.
   const seconds = status.playing ? status.currentTime : status.duration;
+  // A file the player cannot fetch or decode used to leave a disabled button
+  // and no explanation, which looks the same as an app with no sound. The
+  // player reports why, so say so.
+  const failed = status.error !== null && !status.isLoaded;
 
   function toggle() {
     if (status.playing) {
@@ -119,13 +123,19 @@ export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
         onPress={toggle}
         disabled={!status.isLoaded}
         accessibilityRole="button"
-        accessibilityLabel={status.playing ? 'Pause voice message' : 'Play voice message'}
-        accessibilityState={{ disabled: !status.isLoaded, busy: !status.isLoaded }}
+        accessibilityLabel={
+          failed
+            ? 'Voice message could not be played'
+            : status.playing
+              ? 'Pause voice message'
+              : 'Play voice message'
+        }
+        accessibilityState={{ disabled: !status.isLoaded, busy: !status.isLoaded && !failed }}
         hitSlop={space.sm}
         style={({ pressed }) => ({ opacity: !status.isLoaded ? 0.5 : pressed ? 0.7 : 1 })}
       >
         <Ionicons
-          name={status.playing ? 'pause-circle' : 'play-circle'}
+          name={failed ? 'alert-circle' : status.playing ? 'pause-circle' : 'play-circle'}
           size={32}
           color={foreground}
           accessible={false}
@@ -133,7 +143,7 @@ export function MessageVoice({ url, mine }: { url: string; mine: boolean }) {
       </Pressable>
       <Ionicons name="mic-outline" size={16} color={muted} accessible={false} />
       <Text style={[type.footnote, { color: muted, fontVariant: ['tabular-nums'] }]}>
-        {status.isLoaded ? clock(Math.round(seconds)) : '--:--'}
+        {failed ? 'Unavailable' : status.isLoaded ? clock(Math.round(seconds)) : '--:--'}
       </Text>
     </View>
   );

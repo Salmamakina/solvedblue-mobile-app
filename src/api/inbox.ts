@@ -40,10 +40,20 @@ export const INBOX_QUERY_KEY = 'inbox';
 export const INBOX_BADGE_QUERY_KEY = 'inbox-badge';
 export const INBOX_PAGE_SIZE = 25;
 
+/**
+ * The folders, in the order they are shown. All is first because it is the one
+ * the screen opens on, and a selected chip that starts in the middle of the row
+ * reads as though something has already been filtered away.
+ *
+ * `needs_reply` is labelled "Unread": one word, and it is what the folder means
+ * to the person reading it — conversations where the last word was theirs, not
+ * ours. The key stays `needs_reply` because that is the folder name the backend
+ * and the web both use (spyder-backend/src/routes/inbox.ts).
+ */
 export const INBOX_FOLDERS: { key: InboxFolder; label: string }[] = [
-  { key: 'needs_reply', label: 'Needs reply' },
-  { key: 'mine', label: 'Mine' },
   { key: 'all', label: 'All' },
+  { key: 'needs_reply', label: 'Unread' },
+  { key: 'mine', label: 'Mine' },
   { key: 'flagged', label: 'Flagged' },
   { key: 'closed', label: 'Closed' },
 ];

@@ -41,6 +41,13 @@ import {
 /** How many waiting conversations the card previews before the Inbox button. */
 const WAITING_PREVIEW = 3;
 
+/**
+ * TEMPORARY: Campaigns is hidden across the app for now, so the card at the
+ * bottom of Home goes with the tab. Typed `boolean` rather than left as the
+ * literal `false` so TypeScript keeps checking the block it guards.
+ */
+const SHOW_CAMPAIGNS: boolean = false;
+
 export default function HomeScreen() {
   const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true);
   const { colors, type, space } = useTheme();
@@ -286,8 +293,12 @@ export default function HomeScreen() {
       {/* Campaigns, for a platform admin only. The same gate as the tab and as
           the web's Home, where `showCampaigns = !customer`: a customer who
           cannot open the Campaigns screen should not be shown a card of
-          campaign progress they can do nothing with. */}
-      {isPlatformAdmin ? (
+          campaign progress they can do nothing with.
+
+          TEMPORARY: hidden from platform admins too, so Home ends at Waiting
+          on you, the same way Campaigns is out of the tab bar. Set
+          SHOW_CAMPAIGNS back to true to restore it. */}
+      {SHOW_CAMPAIGNS && isPlatformAdmin ? (
         <Card title="Campaigns">
           {data.campaigns.length === 0 ? (
             <Text style={[type.footnote, { color: colors.label2 }]}>

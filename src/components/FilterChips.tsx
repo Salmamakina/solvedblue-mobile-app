@@ -82,7 +82,12 @@ export function FilterChips<K extends string>({
       }}
       accessibilityRole="tablist"
       accessibilityLabel={label}
-      style={style}
+      // flexShrink: 0 is load-bearing. A ScrollView is a flex child like any
+      // other, and when the column it sits in runs out of room — Contacts has
+      // two buttons and a search field above it — the default flexShrink of 1
+      // let this row give up height, which clipped the chips in half. The row
+      // is one line of chips; it must keep the height its content asks for.
+      style={[{ flexGrow: 0, flexShrink: 0 }, style]}
       contentContainerStyle={[{ gap: space.sm, paddingHorizontal: space.lg }, contentStyle]}
     >
       {chips.map((chip) => {

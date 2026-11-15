@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { setAudioModeAsync } from 'expo-audio';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
@@ -6,8 +7,10 @@ import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DEV_BYPASS_AUTH } from '../src/config/devBypass';
+import { hideDevToolsButton } from '../src/config/devMenu';
 import { usePushNotifications } from '../src/notifications/usePushNotifications';
 import { useAuthStore } from '../src/stores/authStore';
+import { useThemeStore } from '../src/stores/themeStore';
 import { useTheme } from '../src/theme/useTheme';
 
 const queryClient = new QueryClient({
@@ -85,23 +88,31 @@ export default function RootLayout() {
   const { colors, dark } = useTheme();
   const hydrateAuth = useAuthStore((s) => s.hydrate);
   const authReady = useAuthStore((s) => s.hydrated);
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
+  const themeReady = useThemeStore((s) => s.hydrated);
   // A ref, not state: nothing renders differently because hydration has begun,
   // and setting state here would cascade a second render before the first
-  // paint. `hydrated` on the store is what the UI actually waits on.
+  // paint. `hydrated` on each store is what the UI actually waits on.
   const started = useRef(false);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     void hydrateAuth();
-  }, [hydrateAuth]);
+    void hydrateTheme();
+    hideDevToolsButton();
+    // Set once for the whole app, not per player. On iOS a phone with the
+    // ringer switch on silent plays nothing unless the audio session says
+    // otherwise, so a voice message or a voicemail would look like it was
+    // playing — the clock runs — with no sound. Android ignores this.
+    void setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
+  }, [hydrateAuth, hydrateTheme]);
 
   useAuthGuard();
 
-  // The stored session must be read before the first paint, otherwise the app
-  // flashes the signed-out screen on every cold start. Appearance no longer
-  // waits on anything: useColorScheme has the device's setting synchronously.
-  const ready = authReady;
+  // Both stores must be read before the first paint, otherwise the app flashes
+  // the signed-out screen, or the wrong appearance, on every cold start.
+  const ready = authReady && themeReady;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

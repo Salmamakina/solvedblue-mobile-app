@@ -1,4 +1,5 @@
 import { sendBlockMessage } from './account';
+import type { CallStatus } from './calls';
 import api from './client';
 import { MediaError, type MediaKind } from './media';
 
@@ -11,11 +12,17 @@ export interface MessageReaction {
 
 export interface ChatMessage {
   id: string;
-  type: 'sent' | 'received';
+  /**
+   * 'call' is a phone call placed in the conversation by when it started, from
+   * the third branch of the backend's chat union (routes/messages.ts). It
+   * carries none of the message fields: no text, no media_url, only the
+   * `call_*` ones below.
+   */
+  type: 'sent' | 'received' | 'call';
   message_text?: string;
   reply_text?: string;
   phone_number: string;
-  delivery_method: 'imessage' | 'sms' | 'rcs';
+  delivery_method: 'imessage' | 'sms' | 'rcs' | 'call';
   status?: 'pending' | 'sent' | 'delivered' | 'failed';
   sent_at?: string;
   delivered_at?: string;
@@ -30,6 +37,14 @@ export interface ChatMessage {
   received_at?: string;
   text_effect?: string;
   reactions?: MessageReaction[];
+  /** Call items only (type 'call'); `created_at` is when the call started. */
+  call_direction?: 'in' | 'out' | null;
+  call_status?: CallStatus | null;
+  call_duration_s?: number | null;
+  /** The call has a recording — a voicemail, or a recorded conversation. */
+  call_has_recording?: boolean;
+  call_transcript?: string | null;
+  call_user_id?: string | null;
 }
 
 export interface PaginationInfo {

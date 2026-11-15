@@ -1,3 +1,4 @@
+import { exchangeCodeAsync } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import { useRouter } from 'expo-router';
 import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
@@ -12,13 +13,15 @@ import { useAuthStore } from '../stores/authStore';
 WebBrowser.maybeCompleteAuthSession();
 
 /**
- * Google sign-in, in three steps:
+ * Google sign-in, in four steps:
  *
- *   1. expo-auth-session opens the system browser and returns Google's id_token.
- *   2. Firebase exchanges that for a Firebase ID token (signInWithCredential).
- *   3. The backend's /auth/firebase verifies it and returns our own JWT.
+ *   1. expo-auth-session opens the system browser and returns an authorization
+ *      code (Google allows nothing else from an installed app).
+ *   2. exchangeCodeAsync trades the code for Google's id_token.
+ *   3. Firebase exchanges that for a Firebase ID token (signInWithCredential).
+ *   4. The backend's /auth/firebase verifies it and returns our own JWT.
  *
- * Step 2 is required and not a detour. The backend calls verifyIdToken, which
+ * Step 3 is required and not a detour. The backend calls verifyIdToken, which
  * only accepts Firebase ID tokens: a raw Google token carries aud = the OAuth
  * client id and is rejected for having the wrong audience. The web app gets its
  * Firebase token from signInWithPopup, which needs a browser window and cannot
@@ -82,7 +85,45 @@ export function useGoogleSignIn(): GoogleSignIn {
     clientId: webClientId,
     iosClientId,
     androidClientId,
+    /*
+     * The library can exchange the authorization code itself, but only from an
+     * effect inside the mounted screen, and it writes the result to the
+     * `response` tuple slot this hook does not read. `exchangeForIdToken`
+     * below does it instead. Switching the library's copy off is not tidying:
+     * an authorization code is single-use, so running both exchanges would
+     * leave one of them failing with invalid_grant.
+     */
+    shouldAutoExchangeCode: false,
   });
+
+  /**
+   * Trades Google's authorization code for an id_token.
+   *
+   * On a device the provider always asks for `response_type=code` — Google
+   * refuses the implicit flow from an installed app — so the prompt result
+   * carries `code` and no token at all. Reading `params.id_token` from it, as
+   * this hook did, could only ever fail. The exchange needs the same client id
+   * and redirect URI the request used, plus its PKCE verifier, so it reads them
+   * off `request` rather than recomputing them.
+   */
+  const exchangeForIdToken = useCallback(
+    async (code: string): Promise<string | undefined> => {
+      if (!request) return undefined;
+      const token = await exchangeCodeAsync(
+        {
+          clientId: request.clientId,
+          redirectUri: request.redirectUri,
+          code,
+          extraParams: request.codeVerifier
+            ? { code_verifier: request.codeVerifier }
+            : undefined,
+        },
+        Google.discovery
+      );
+      return token.idToken;
+    },
+    [request]
+  );
 
   /**
    * Google's id_token for our own session: Firebase first, then the backend.
@@ -94,9 +135,6 @@ export function useGoogleSignIn(): GoogleSignIn {
     async (googleIdToken: string) => {
       if (handled.current === googleIdToken) return;
       handled.current = googleIdToken;
-
-      setExchanging(true);
-      setError('');
 
       const auth = getFirebaseAuth();
       try {
@@ -115,7 +153,6 @@ export function useGoogleSignIn(): GoogleSignIn {
       } finally {
         // The backend's JWT is the session now; the Firebase user is not needed.
         await signOut(auth).catch(() => undefined);
-        setExchanging(false);
       }
     },
     [router, setAuth]
@@ -128,20 +165,12 @@ export function useGoogleSignIn(): GoogleSignIn {
    * `response` state this hook used to watch in an effect. That change is the
    * difference between this working and not, and the reason is specific:
    *
-   * Expo Router owns deep linking. The redirect in a development build is
-   * `spyder://oauthredirect` — `makeRedirectUri` ignores its `native` option
-   * unless `executionEnvironment` is Standalone or Bare, and a build made with
-   * expo-dev-client reports StoreClient, the same as Expo Go. So the redirect
-   * is a URL with a path, Expo Router matches it as a route, finds nothing, and
-   * navigates to its Unmatched Route screen. That unmounts the sign-in screen
-   * and this hook with it, so the effect watching `response` never ran and the
-   * authorization code was dropped on the floor.
-   *
-   * A promise continuation does not care that the component unmounted: the
-   * exchange finishes, `setAuth` writes the session, and the root layout's
-   * guard moves the app to Home. The earlier comment here reasoned the other
-   * way round, but it was written before the flow had ever been run against a
-   * real Google client (ROADMAP P0.1).
+   * Expo Router owns deep linking. The redirect on Android is
+   * `spyder:///oauthredirect?code=...`, a URL with a path, which the router
+   * would match as a route and miss — `app/+native-intent.ts` is what stops it
+   * showing Unmatched Route over the top of this screen. A promise
+   * continuation survives an unmount anyway, so the exchange finishes either
+   * way; the effect this replaced did not.
    */
   const signIn = useCallback(() => {
     setError('');
@@ -154,12 +183,25 @@ export function useGoogleSignIn(): GoogleSignIn {
       const result = await promptAsync();
 
       if (result.type === 'success') {
-        const googleIdToken = result.params?.id_token ?? result.authentication?.idToken;
-        if (!googleIdToken) {
-          setError('Google did not return an identity token. Please try again.');
-          return;
+        setExchanging(true);
+        try {
+          // params.id_token is only ever set on the web, where the response
+          // type is a token rather than a code.
+          const googleIdToken =
+            result.params?.id_token ??
+            result.authentication?.idToken ??
+            (result.params?.code ? await exchangeForIdToken(result.params.code) : undefined);
+
+          if (!googleIdToken) {
+            setError('Google did not return an identity token. Please try again.');
+            return;
+          }
+          await completeSignIn(googleIdToken);
+        } catch (err) {
+          setError(apiErrorMessage(err, 'Could not sign in with Google.'));
+        } finally {
+          setExchanging(false);
         }
-        await completeSignIn(googleIdToken);
         return;
       }
 
@@ -173,7 +215,7 @@ export function useGoogleSignIn(): GoogleSignIn {
         setError('Could not sign in with Google.');
       }
     })();
-  }, [completeSignIn, configured, promptAsync]);
+  }, [completeSignIn, configured, exchangeForIdToken, promptAsync]);
 
   return {
     signIn,
