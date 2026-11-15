@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,11 +16,15 @@ import {
 } from '../../src/api/inbox';
 import { AppHeader } from '../../src/components/AppHeader';
 import { Badge } from '../../src/components/Badge';
+import { FilterChips } from '../../src/components/FilterChips';
 import { Screen } from '../../src/components/Screen';
+import { SearchField } from '../../src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
+import { useDebounced } from '../../src/components/useDebounced';
 import { useAuthStore } from '../../src/stores/authStore';
+import { emojiSafe } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/useTheme';
-import { shortTime, threadTitle } from '../../src/utils/format';
+import { listTime, threadTitle } from '../../src/utils/format';
 
 /**
  * The team inbox. One list, filtered by the same five folders the web and the
@@ -37,10 +42,16 @@ export default function InboxScreen() {
   const queryClient = useQueryClient();
   const myId = useAuthStore((s) => s.user?.id);
   const [folder, setFolder] = useState<InboxFolder>('all');
+  const [search, setSearch] = useState('');
+  // The field keeps every keystroke; the query waits until typing stops.
+  const query = useDebounced(search.trim());
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: [INBOX_QUERY_KEY, folder],
-    queryFn: () => inboxApi.list({ folder }),
+    queryKey: [INBOX_QUERY_KEY, folder, query],
+    queryFn: () => inboxApi.list({ folder, q: query }),
+    // Results for the previous search stay on screen while the next ones load,
+    // instead of the list emptying and the spinner replacing it on every pause.
+    placeholderData: (previous) => previous,
   });
 
   // Assigning is a paid feature on the server, so the action is offered only
@@ -110,42 +121,52 @@ export default function InboxScreen() {
     <Screen>
       <AppHeader />
 
-      {/* Folders above the list, each carrying the server's own count, so what
-          is waiting is visible without opening each one. */}
-      <View
-        style={[styles.folders, { paddingHorizontal: space.lg, paddingTop: space.md }]}
-      >
-        {INBOX_FOLDERS.map(({ key, label }) => {
-          const active = key === folder;
-          const count = data?.counts?.[key];
-          return (
-            <Pressable
-              key={key}
-              onPress={() => setFolder(key)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              accessibilityLabel={count ? `${label}, ${count}` : label}
-              style={({ pressed }) => ({
-                backgroundColor: active ? colors.blue : colors.fill,
+      <View style={{ paddingHorizontal: space.lg, paddingTop: space.md, gap: space.md }}>
+        {/* Title and New message on one row, as the web's inbox-title-row does.
+            Starting a conversation belongs to the whole inbox rather than to
+            the folder showing, so it sits above the folders, not inside them. */}
+        <View style={styles.titleBar}>
+          <Text style={[type.section, { color: colors.label }]}>Inbox</Text>
+          <Pressable
+            onPress={() => router.push('/inbox/new')}
+            accessibilityRole="button"
+            accessibilityLabel="New message"
+            hitSlop={space.sm}
+            style={({ pressed }) => [
+              styles.newMessage,
+              {
+                backgroundColor: colors.blueTint,
                 borderRadius: radius.pill,
                 paddingHorizontal: space.md,
-                paddingVertical: space.sm,
-                opacity: pressed && !active ? 0.6 : 1,
-              })}
-            >
-              <Text
-                style={[
-                  type.footnote,
-                  { color: active ? '#FFFFFF' : colors.label2, fontWeight: '600' },
-                ]}
-              >
-                {label}
-                {count ? ` ${count}` : ''}
-              </Text>
-            </Pressable>
-          );
-        })}
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="add" size={16} color={colors.blue} accessible={false} />
+            <Text style={[type.footnote, { color: colors.blue, fontWeight: '600' }]}>
+              New message
+            </Text>
+          </Pressable>
+        </View>
+
+        <SearchField
+          value={search}
+          onChangeText={setSearch}
+          label="Search conversations"
+          placeholder="Search name or number"
+        />
       </View>
+
+      {/* Folders on one scrolling line, each carrying the server's own count,
+          so what is waiting is visible without opening each one. */}
+      <FilterChips
+        chips={INBOX_FOLDERS}
+        selected={folder}
+        onSelect={setFolder}
+        counts={data?.counts}
+        label="Folders"
+        style={{ flexGrow: 0, marginTop: space.md }}
+      />
 
       {isLoading ? (
         <LoadingState label="Loading conversations" />
@@ -159,7 +180,16 @@ export default function InboxScreen() {
           ItemSeparatorComponent={() => (
             <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.sep }} />
           )}
-          ListEmptyComponent={<EmptyState title="Nothing here" hint={emptyHint(folder)} />}
+          ListEmptyComponent={
+            // A search that matched nothing is not an empty folder, and saying
+            // "Nobody is waiting on a reply" to someone who just mistyped a
+            // name would be answering a question they did not ask.
+            query ? (
+              <EmptyState title="No matches" hint="Try a different name or number." />
+            ) : (
+              <EmptyState title="Nothing here" hint={emptyHint(folder)} />
+            )
+          }
           contentContainerStyle={(data?.threads?.length ?? 0) === 0 ? styles.grow : undefined}
           renderItem={({ item }) => (
             <Pressable
@@ -198,9 +228,15 @@ export default function InboxScreen() {
                     {threadTitle(item.display_name, item.phone_number)}
                   </Text>
                 </View>
-                <Text style={[type.footnote, { color: colors.label2 }]} numberOfLines={1}>
+                {/* emojiSafe because this line is what a contact sent: the
+                    ramp's footnote line height crops an emoji on Android.
+                    See emojiSafe in src/theme/tokens.ts. */}
+                <Text
+                  style={[emojiSafe(type.footnote), { color: colors.label2 }]}
+                  numberOfLines={1}
+                >
                   {item.last_direction === 'out' ? 'You: ' : ''}
-                  {item.last_text ?? 'No messages yet'}
+                  {threadPreview(item)}
                 </Text>
                 {item.tag === 'opted_out' ? (
                   <View style={{ marginTop: space.xs }}>
@@ -218,7 +254,7 @@ export default function InboxScreen() {
                   <Badge label="Yours" tone="info" />
                 ) : null}
                 <Text style={[type.caption, { color: colors.label2 }]}>
-                  {shortTime(item.last_at)}
+                  {listTime(item.last_at)}
                 </Text>
               </View>
             </Pressable>
@@ -255,6 +291,27 @@ function runAction(thread: InboxThread, action: ThreadAction, myId: string | und
   }
 }
 
+/**
+ * The preview line for a conversation.
+ *
+ * A message carrying only a picture or a recording has no text, so `last_text`
+ * is null and the row used to read "No messages yet" — the same words as a
+ * conversation that genuinely has none. "Attachment" is what the web shows
+ * here, for the same reason and in the same words.
+ *
+ * It cannot yet say which: GET /inbox builds `last_text` from `message_text`
+ * and `reply_text` alone (the `items` CTE in
+ * spyder-backend/src/services/inboxQuery.ts) and returns no media column, so
+ * the kind is not in the response. Saying "Photo" or "Voice message" needs that
+ * query to carry `media_kind` through, which is a backend change.
+ */
+function threadPreview(thread: InboxThread): string {
+  if (thread.last_text) return thread.last_text;
+  // last_at is set by the same row last_text came from, so a thread with a time
+  // but no text has an item that carried no words.
+  return thread.last_at ? 'Attachment' : 'No messages yet';
+}
+
 /** Why this folder is empty, which differs enough per folder to be worth saying. */
 function emptyHint(folder: InboxFolder): string {
   switch (folder) {
@@ -272,7 +329,8 @@ function emptyHint(folder: InboxFolder): string {
 }
 
 const styles = StyleSheet.create({
-  folders: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  titleBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  newMessage: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 36 },
   // alignItems flex-start, so the flagged badge and time sit at the row's top
   // edge rather than being centred against a two-line message.
   thread: { flexDirection: 'row', alignItems: 'flex-start' },

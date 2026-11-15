@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState, type ReactNode } from 'react';
@@ -10,13 +9,12 @@ import {
   billingApi,
   DELETION_QUERY_KEY,
   isUnlimited,
-  MCP_URL,
   planLimit,
   planPrice,
-  PUBLIC_API_URL,
   SENDING_RULES,
   type AccountData,
   type PlanCard,
+  type PlanId,
 } from '../../src/api/account';
 import { apiErrorMessage } from '../../src/api/client';
 import {
@@ -52,10 +50,8 @@ import { relativeTime } from '../../src/utils/format';
  * so those buttons open one the way Contact sales does.
  */
 export default function AccountScreen() {
-  const { colors, type, space, radius } = useTheme();
+  const { colors, type, space } = useTheme();
   const clearAuth = useAuthStore((s) => s.clearAuth);
-  const preference = useThemeStore((s) => s.preference);
-  const setPreference = useThemeStore((s) => s.setPreference);
   const queryClient = useQueryClient();
 
   const account = useQuery({ queryKey: [ACCOUNT_QUERY_KEY], queryFn: accountApi.get });
@@ -181,11 +177,7 @@ export default function AccountScreen() {
                   price={planPrice(plan)}
                   quoted={plan.price_usd_month === null}
                 >
-                  <Text style={[type.caption, { color: colors.label2 }]}>
-                    {planLimit(plan.lines)} {plan.lines === 1 ? 'line' : 'lines'} ·{' '}
-                    {planLimit(plan.seats)} {plan.seats === 1 ? 'seat' : 'seats'} ·{' '}
-                    {planLimit(plan.contacts)} contacts
-                  </Text>
+                  <PlanDetails plan={plan} trialDays={billing.offer.trial_days} />
                   {/* A plan that is not self-serve has no Stripe price, so the
                       only way onto it is a conversation. For those the price
                       slot in the header is the Talk to us button, so there is
@@ -218,76 +210,23 @@ export default function AccountScreen() {
           </View>
         </Section>
 
-        <ApiKeys canManage={isAdmin} hasAccess={entitlements.features.api_access} />
-
-        <Card title="MCP">
-          <View style={{ gap: space.sm }}>
-            <Text style={[type.footnote, { color: colors.label2 }]}>
-              Connect an AI assistant to your workspace. Give it this address and an API key.
-            </Text>
-            <Copyable label="MCP server" value={MCP_URL} />
-            <Copyable label="API base" value={PUBLIC_API_URL} />
-          </View>
-        </Card>
+        {/* The API keys and MCP cards used to sit here. They moved to the
+            API & MCP tab, where the developer documentation is too: Account
+            was already the longest screen in the app, and connecting a tool
+            to the workspace is not a setting about you. */}
 
         {/* A Lines card used to sit here, listing the fleet phones. Only a
             platform admin can act on those, so for everyone else it was a
             read-only block of numbers in the middle of their own settings. */}
-        <Card title="Preferences">
-          <Text style={[type.footnote, { color: colors.label2, marginBottom: space.sm }]}>
-            Appearance
-          </Text>
-          <View
-            style={[
-              styles.segment,
-              { backgroundColor: colors.fill, borderRadius: radius.md, padding: 3 },
-            ]}
-          >
-            {THEME_OPTIONS.map(({ key, label }) => {
-              const active = key === preference;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => void setPreference(key)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={label}
-                  accessibilityState={{ selected: active }}
-                  style={({ pressed }) => [
-                    styles.segmentItem,
-                    {
-                      backgroundColor: active ? colors.bg2 : 'transparent',
-                      borderRadius: radius.sm,
-                      opacity: pressed && !active ? 0.6 : 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      type.footnote,
-                      {
-                        color: active ? colors.label : colors.label2,
-                        fontWeight: active ? '600' : '400',
-                      },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={[type.caption, { color: colors.label2, marginTop: space.sm }]}>
-            {preference === 'system'
-              ? 'Following your device appearance.'
-              : `Always ${preference}.`}
-          </Text>
-        </Card>
+        <Appearance />
 
-        <Button label="Sign out" variant="secondary" onPress={signOut} />
-
-        {/* Last on the screen, and the only thing below Sign out, so the
-            destructive action is nowhere near anything routine. */}
         <DeleteAccount onDeleted={signOut} onManageBilling={() => openStripe.mutate(null)} />
+
+        {/* Last on the screen, next to deleting the account, because the two
+            things you do when you are finished with the app belong together.
+            Red, like Delete account: leaving the app is not a routine tap you
+            want to make by accident with a thumb on the way to something else. */}
+        <Button label="Sign out" variant="danger" onPress={signOut} />
       </ScrollView>
     </Screen>
   );
@@ -364,6 +303,63 @@ function PlanTile({
         )}
       </View>
       {children}
+    </View>
+  );
+}
+
+/**
+ * What a plan is for, in one line, so the tiles can be compared on something
+ * other than price. Each sentence only restates that plan's own allowances
+ * (services/entitlements.ts), so it cannot drift away from what is sold.
+ */
+const PLAN_BLURBS: Record<PlanId, string> = {
+  starter: 'For one person working from one number.',
+  team: 'For a small team sharing an inbox across a few numbers.',
+  brokerage: 'For a large team and a fleet of numbers. Priced after a conversation.',
+};
+
+/**
+ * What a plan includes, spelled out one line at a time.
+ *
+ * This used to be a single run-on line — "1 line · 1 seat · 1,500 contacts" —
+ * which is the whole plan in nine words and reads as a footnote rather than as
+ * an offer. The allowances get a line each, and the two features that change
+ * what the app can actually do get named.
+ *
+ * Only `team_inbox` and `api_access` are listed. The other two flags the API
+ * reports, `ai_tagging` and `crm_sync`, are not enforced anywhere in the
+ * backend and the public FAQ says CRM connections are still to come, so
+ * printing them as things you get would be a promise the app cannot keep.
+ */
+function PlanDetails({ plan, trialDays }: { plan: PlanCard; trialDays: number }) {
+  const { colors, type, space } = useTheme();
+
+  const includes = [
+    `${planLimit(plan.lines)} ${plan.lines === 1 ? 'number' : 'numbers'} to send from`,
+    `${planLimit(plan.seats)} ${plan.seats === 1 ? 'seat' : 'seats'}`,
+    `${planLimit(plan.contacts)} contacts`,
+    plan.features.team_inbox
+      ? 'Shared inbox: assign a conversation to a teammate'
+      : 'Your own inbox, not shared',
+    ...(plan.features.api_access ? ['API and MCP access'] : []),
+    ...(plan.self_serve && trialDays > 0 ? [`${trialDays}-day trial before you are charged`] : []),
+  ];
+
+  return (
+    <View style={{ gap: space.sm }}>
+      <Text style={[type.footnote, { color: colors.label }]}>{PLAN_BLURBS[plan.id]}</Text>
+      <View style={{ gap: space.xs }}>
+        {includes.map((item) => (
+          <View key={item} style={styles.consequence}>
+            <Text style={[type.caption, { color: colors.label2 }]}>•</Text>
+            <Text
+              style={[type.caption, { color: colors.label2, flex: 1, marginLeft: space.xs }]}
+            >
+              {item}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -632,6 +628,76 @@ function SendingRules({
   );
 }
 
+/**
+ * Light, Dark or System, stored on the device.
+ *
+ * A segmented control rather than a switch, because there are three answers and
+ * "System" is one of them: a two-state toggle cannot say "whatever the phone
+ * says". The choice applies on the tap and is read back before the first paint
+ * on the next launch (app/_layout.tsx), so the app never flashes the other
+ * appearance on the way in.
+ */
+function Appearance() {
+  const { colors, type, space, radius } = useTheme();
+  const preference = useThemeStore((s) => s.preference);
+  const setPreference = useThemeStore((s) => s.setPreference);
+
+  return (
+    <Card title="Preferences">
+      <Text style={[type.footnote, { color: colors.label2, marginBottom: space.sm }]}>
+        Appearance
+      </Text>
+      <View
+        style={[
+          styles.segment,
+          { backgroundColor: colors.fill, borderRadius: radius.md, padding: 3 },
+        ]}
+      >
+        {THEME_OPTIONS.map(({ key, label }) => {
+          const active = key === preference;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => void setPreference(key)}
+              accessibilityRole="radio"
+              accessibilityLabel={label}
+              accessibilityState={{ selected: active }}
+              style={({ pressed }) => [
+                styles.segmentItem,
+                {
+                  backgroundColor: active ? colors.bg2 : 'transparent',
+                  borderRadius: radius.sm,
+                  opacity: pressed && !active ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  type.footnote,
+                  {
+                    color: active ? colors.label : colors.label2,
+                    fontWeight: active ? '600' : '400',
+                  },
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {/* Only System needs a sentence, because it is the one option whose
+          result depends on something outside the app. Light and Dark say what
+          they do in the word on the button. */}
+      {preference === 'system' ? (
+        <Text style={[type.caption, { color: colors.label2, marginTop: space.sm }]}>
+          Following your device appearance.
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
 /** One usage bar. An unlimited allowance has no bar to fill. */
 function Usage({ label, used, limit }: { label: string; used: number; limit: number | null }) {
   const { colors, type, space } = useTheme();
@@ -657,183 +723,6 @@ function Usage({ label, used, limit }: { label: string; used: number; limit: num
   );
 }
 
-/** A read-only value with a copy button, for the MCP and API addresses. */
-function Copyable({ label, value }: { label: string; value: string }) {
-  const { colors, type, space, radius } = useTheme();
-
-  return (
-    <View style={{ gap: space.xs }}>
-      <Text style={[type.caption, { color: colors.label2, fontWeight: '600' }]}>{label}</Text>
-      <Pressable
-        onPress={() => {
-          void Clipboard.setStringAsync(value);
-          Alert.alert('Copied', `${label} copied to the clipboard.`);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`Copy ${label}`}
-        style={({ pressed }) => [
-          styles.copyable,
-          {
-            backgroundColor: colors.fill2,
-            borderColor: colors.sep,
-            borderRadius: radius.md,
-            opacity: pressed ? 0.6 : 1,
-          },
-        ]}
-      >
-        <Text style={[type.caption, { color: colors.label, flex: 1 }]} numberOfLines={1}>
-          {value}
-        </Text>
-        <Text style={[type.caption, { color: colors.blue, fontWeight: '600' }]}>Copy</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-/**
- * The organization's API keys. Creating and revoking are admin-only on the
- * server, so a member sees the list without the controls rather than buttons
- * that would 403.
- */
-function ApiKeys({ canManage, hasAccess }: { canManage: boolean; hasAccess: boolean }) {
-  const { colors, type, space } = useTheme();
-  const queryClient = useQueryClient();
-  // Naming happens inline rather than in Alert.prompt, which is iOS only.
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState('');
-
-  const keys = useQuery({
-    queryKey: ['api-keys'],
-    queryFn: accountApi.listKeys,
-    enabled: hasAccess,
-  });
-
-  const create = useMutation({
-    mutationFn: (keyName: string) => accountApi.createKey(keyName),
-    onSuccess: (created) => {
-      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-      setNaming(false);
-      setName('');
-      // The secret exists in this response and nowhere else, so it is put on
-      // the clipboard straight away rather than shown in a dialog that could
-      // be dismissed before it is copied.
-      void Clipboard.setStringAsync(created.key);
-      Alert.alert(
-        'Key created and copied',
-        'The full key is on your clipboard. Save it somewhere safe: it cannot be shown again.'
-      );
-    },
-    onError: (err) => Alert.alert('API keys', apiErrorMessage(err, 'Could not create the key')),
-  });
-
-  const revoke = useMutation({
-    mutationFn: (id: string) => accountApi.revokeKey(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['api-keys'] }),
-    onError: (err) => Alert.alert('API keys', apiErrorMessage(err, 'Could not revoke the key')),
-  });
-
-  if (!hasAccess) {
-    return (
-      <Card title="API keys">
-        <Text style={[type.footnote, { color: colors.label2 }]}>
-          Your plan does not include API access.
-        </Text>
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="API keys">
-      <View style={{ gap: space.md }}>
-        {keys.isLoading ? (
-          <Text style={[type.footnote, { color: colors.label2 }]}>Loading…</Text>
-        ) : (keys.data?.length ?? 0) === 0 ? (
-          <Text style={[type.footnote, { color: colors.label2 }]}>
-            No keys yet. A key lets an assistant or a script use your workspace.
-          </Text>
-        ) : (
-          keys.data?.map((key) => (
-            <View key={key.id} style={styles.between}>
-              <View style={{ flex: 1 }}>
-                <Text style={[type.body, { color: colors.label }]} numberOfLines={1}>
-                  {key.name}
-                </Text>
-                <Text style={[type.caption, { color: colors.label2 }]}>
-                  {key.prefix}… ·{' '}
-                  {key.last_used_at ? `used ${relativeTime(key.last_used_at)}` : 'never used'}
-                </Text>
-              </View>
-              {canManage ? (
-                <Pressable
-                  onPress={() =>
-                    Alert.alert(
-                      'Revoke this key?',
-                      `Anything using "${key.name}" will stop working. This cannot be undone.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Revoke',
-                          style: 'destructive',
-                          onPress: () => revoke.mutate(key.id),
-                        },
-                      ]
-                    )
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={`Revoke ${key.name}`}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, marginLeft: space.sm })}
-                >
-                  <Text style={[type.footnote, { color: colors.red, fontWeight: '600' }]}>
-                    Revoke
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ))
-        )}
-
-        {canManage ? (
-          naming ? (
-            <View style={{ gap: space.sm }}>
-              <Field
-                label="Key name"
-                value={name}
-                onChangeText={setName}
-                placeholder="My assistant"
-                hint="So you can tell it apart later."
-                autoFocus
-              />
-              <View style={styles.pair}>
-                <Button
-                  label="Create"
-                  onPress={() => create.mutate(name.trim())}
-                  disabled={name.trim().length === 0}
-                  loading={create.isPending}
-                  style={styles.half}
-                />
-                <Button
-                  label="Cancel"
-                  variant="secondary"
-                  onPress={() => {
-                    setNaming(false);
-                    setName('');
-                  }}
-                  style={styles.half}
-                />
-              </View>
-            </View>
-          ) : (
-            <Button label="Create key" variant="secondary" onPress={() => setNaming(true)} />
-          )
-        ) : (
-          <Text style={[type.caption, { color: colors.label2 }]}>
-            Only an admin can create or revoke keys.
-          </Text>
-        )}
-      </View>
-    </Card>
-  );
-}
 
 /**
  * Deleting your own account. Apple requires this of any app that lets you make
@@ -983,8 +872,6 @@ const styles = StyleSheet.create({
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   consequence: { flexDirection: 'row', alignItems: 'flex-start' },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  segment: { flexDirection: 'row', gap: 3 },
-  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 38 },
   copyable: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1004,6 +891,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ruleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  segment: { flexDirection: 'row', gap: 3 },
+  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 38 },
   planTile: { borderCurve: 'continuous' },
   planHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

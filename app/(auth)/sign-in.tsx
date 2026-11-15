@@ -44,7 +44,10 @@ export default function SignInScreen() {
       <StatusBar style="dark" />
 
       <View style={styles.center}>
-        <Wordmark />
+        {/* onLight because this screen is always light whatever the device
+            appearance, so the wordmark must keep its navy "Solved" even when
+            the phone is in dark mode. */}
+        <Wordmark onLight />
         <Text
           style={[
             type.body,

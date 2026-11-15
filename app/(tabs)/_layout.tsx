@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
 import { INBOX_BADGE_QUERY_KEY, inboxApi } from '../../src/api/inbox';
+// import { useAuthStore } from '../../src/stores/authStore';
 import { useTheme } from '../../src/theme/useTheme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -22,6 +23,8 @@ function tabIcon(name: IconName) {
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  // TEMPORARY: Campaigns is hidden from everyone, so nothing reads this.
+  // const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true);
 
   // Unread conversations, not every conversation needing a reply: the badge is
   // there to say "there is something new you have not seen".
@@ -54,16 +57,36 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="campaigns"
-        options={{ title: 'Campaigns', tabBarIcon: tabIcon('send-outline') }}
-      />
-      <Tabs.Screen
         name="contacts"
         options={{ title: 'Contacts', tabBarIcon: tabIcon('people-outline') }}
+      />
+      {/* API & MCP takes the slot Campaigns had. Same decision as the web,
+          whose customer sidebar is Home, Inbox, Contacts, API & MCP, Account
+          (buildNavSections in spyder-web/src/components/shell/navigation.ts). */}
+      <Tabs.Screen
+        name="developers"
+        options={{ title: 'API & MCP', tabBarIcon: tabIcon('code-slash-outline') }}
       />
       <Tabs.Screen
         name="account"
         options={{ title: 'Account', tabBarIcon: tabIcon('person-circle-outline') }}
+      />
+      {/* Campaigns is hidden from customers and kept for platform admins, the
+          same rule and the same reason as the web's HIDDEN_CUSTOMER_FEATURES
+          (spyder-web/src/features.tsx). The route and src/api/campaigns.ts
+          stay: this is a navigation change, not a deletion, and an admin still
+          reaches the screen. href null removes the tab without unregistering
+          it, so a push to /campaigns still works. */}
+      <Tabs.Screen
+        name="campaigns"
+        options={{
+          title: 'Campaigns',
+          tabBarIcon: tabIcon('send-outline'),
+          // TEMPORARY: hidden from platform admins too, so the bar is the five
+          // customer tabs. Put the line below back to restore the admin tab.
+          // href: isPlatformAdmin ? undefined : null,
+          href: null,
+        }}
       />
     </Tabs>
   );

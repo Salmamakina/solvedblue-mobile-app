@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { setAudioModeAsync } from 'expo-audio';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
@@ -6,6 +7,7 @@ import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DEV_BYPASS_AUTH } from '../src/config/devBypass';
+import { hideDevToolsButton } from '../src/config/devMenu';
 import { usePushNotifications } from '../src/notifications/usePushNotifications';
 import { useAuthStore } from '../src/stores/authStore';
 import { useThemeStore } from '../src/stores/themeStore';
@@ -98,12 +100,18 @@ export default function RootLayout() {
     started.current = true;
     void hydrateAuth();
     void hydrateTheme();
+    hideDevToolsButton();
+    // Set once for the whole app, not per player. On iOS a phone with the
+    // ringer switch on silent plays nothing unless the audio session says
+    // otherwise, so a voice message or a voicemail would look like it was
+    // playing — the clock runs — with no sound. Android ignores this.
+    void setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
   }, [hydrateAuth, hydrateTheme]);
 
   useAuthGuard();
 
   // Both stores must be read before the first paint, otherwise the app flashes
-  // the signed-out screen or the wrong appearance on every cold start.
+  // the signed-out screen, or the wrong appearance, on every cold start.
   const ready = authReady && themeReady;
 
   return (
@@ -119,16 +127,25 @@ export default function RootLayout() {
                 headerTitleStyle: { color: colors.label },
                 headerTintColor: colors.blue,
                 contentStyle: { backgroundColor: colors.bg },
+                // The back control is the arrow alone, on every screen. Each
+                // screen used to name where it came from ("Back", "Contacts",
+                // "Account"), which on a narrow phone competed with the title
+                // for the same row and truncated it. One rule here rather than
+                // one per screen, so a new screen inherits it.
+                //
+                // iOS only in effect: Android never drew the label.
+                headerBackButtonDisplayMode: 'minimal',
               }}
             >
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="chat/[phone]" options={{ title: 'Conversation' }} />
+              {/* Presented as sheets: each is a short task you come back from,
+                  not a place in the tab structure. */}
               <Stack.Screen
-                name="chat/[phone]"
-                options={{ title: 'Conversation', headerBackTitle: 'Back' }}
+                name="inbox/new"
+                options={{ title: 'New message', presentation: 'modal' }}
               />
-              {/* Presented as sheets: both are short tasks you come back from,
-                  not places in the tab structure. */}
               <Stack.Screen
                 name="contacts/new"
                 options={{ title: 'New contact', presentation: 'modal' }}
@@ -151,21 +168,12 @@ export default function RootLayout() {
               {/* Pushed from their tab's list, and the only way in. Both are
                   places you read and come back from, not short tasks, so
                   neither is a sheet. */}
-              <Stack.Screen
-                name="campaigns/[id]"
-                options={{ title: 'Campaign', headerBackTitle: 'Campaigns' }}
-              />
-              <Stack.Screen
-                name="contacts/[id]"
-                options={{ title: 'Contact', headerBackTitle: 'Contacts' }}
-              />
-              <Stack.Screen
-                name="organization/members"
-                options={{ title: 'Members', headerBackTitle: 'Account' }}
-              />
+              <Stack.Screen name="campaigns/[id]" options={{ title: 'Campaign' }} />
+              <Stack.Screen name="contacts/[id]" options={{ title: 'Contact' }} />
+              <Stack.Screen name="organization/members" options={{ title: 'Members' }} />
               <Stack.Screen
                 name="organization/invites"
-                options={{ title: 'Pending invites', headerBackTitle: 'Account' }}
+                options={{ title: 'Pending invites' }}
               />
             </Stack>
           ) : (

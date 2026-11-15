@@ -67,8 +67,12 @@ export function ContactSalesButton({
         style,
       ]}
     >
-      <Ionicons name="calendar-outline" size={14} color={colors.blue} />
-      <Text style={[type.caption, { color: colors.blue, fontWeight: '600' }]}>{label}</Text>
+      {/* `link`, not `blue`. The fill is a 20% blue tint, which in dark mode
+          lands on a dark blue-grey, and `blue` (#0A6CF0) on top of it was too
+          close to read. `link` is the palette's blue for text and goes light
+          (#409CFF) in dark mode, which is the whole reason it exists. */}
+      <Ionicons name="calendar-outline" size={14} color={colors.link} />
+      <Text style={[type.caption, { color: colors.link, fontWeight: '600' }]}>{label}</Text>
     </Pressable>
   );
 }

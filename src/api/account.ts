@@ -163,6 +163,15 @@ export const accountApi = {
 
   /** Admin only. */
   revokeKey: (id: string) => api.delete(`/account/api-keys/${id}`).then(() => undefined),
+  /**
+   * Records that this organization wants the API, for a plan that does not
+   * include it. Mirrors the web's `registerApiInterest`.
+   *
+   * The server keeps the first time it was asked (`COALESCE` on
+   * `api_interest_at`), so asking twice is not a second request.
+   */
+  registerApiInterest: () =>
+    api.post<{ ok: true; at: string }>('/account/api-interest').then((res) => ({ at: res.data.at })),
 
   /** What deleting this account would do, and whether a rule refuses it. */
   deletionPreview: () =>
@@ -197,3 +206,33 @@ export const billingApi = {
   /** Opens the Stripe billing portal for an existing subscription. */
   portal: () => api.post<{ url: string }>('/billing/portal').then((res) => res.data.url),
 };
+
+/**
+ * Why the backend refused a send, in words to show, mirroring
+ * spyder-web/src/api/billing.ts.
+ *
+ * These three are 403s about the account rather than about the message, so they
+ * get their own wording: the generic "couldn't send, try again" would invite
+ * someone to retry something that will keep failing until a plan is chosen or
+ * support unpauses them.
+ */
+export const BILLING_INACTIVE_MESSAGE = "Your plan isn't active. Choose a plan on Account.";
+export const SENDING_PAUSED_MESSAGE = 'Sending is paused by Solvedblue support.';
+export const PLATFORM_PAUSED_MESSAGE = 'Sending is paused for maintenance.';
+
+const blockCode = (error: unknown): unknown =>
+  (error as { response?: { data?: { code?: unknown } } } | null)?.response?.data?.code;
+
+/** The message for a refused send, or null when the error is not a send block. */
+export function sendBlockMessage(error: unknown): string | null {
+  switch (blockCode(error)) {
+    case 'billing_inactive':
+      return BILLING_INACTIVE_MESSAGE;
+    case 'sending_paused':
+      return SENDING_PAUSED_MESSAGE;
+    case 'platform_paused':
+      return PLATFORM_PAUSED_MESSAGE;
+    default:
+      return null;
+  }
+}

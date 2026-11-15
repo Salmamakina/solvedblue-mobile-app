@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -14,8 +15,9 @@ import {
   type ScrollViewInstance,
 } from '../../src/components/useScrollToTop';
 import { useAuthStore } from '../../src/stores/authStore';
+import { emojiSafe } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/useTheme';
-import { shortTime, threadTitle } from '../../src/utils/format';
+import { listTime, threadTitle } from '../../src/utils/format';
 import {
   deltaNote,
   firstName,
@@ -36,7 +38,18 @@ import {
  * none and still needs to see where its numbers will appear. Each one falls
  * back to the same wording the web uses rather than disappearing.
  */
+/** How many waiting conversations the card previews before the Inbox button. */
+const WAITING_PREVIEW = 3;
+
+/**
+ * TEMPORARY: Campaigns is hidden across the app for now, so the card at the
+ * bottom of Home goes with the tab. Typed `boolean` rather than left as the
+ * literal `false` so TypeScript keeps checking the block it guards.
+ */
+const SHOW_CAMPAIGNS: boolean = false;
+
 export default function HomeScreen() {
+  const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true);
   const { colors, type, space } = useTheme();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
@@ -211,14 +224,35 @@ export default function HomeScreen() {
           )}
         </Card>
 
-        <Card title="Waiting on you">
+        {/* Three rows, not five. This is a preview, and the Inbox button beside
+            the title is how you get to the rest, so a longer list here only
+            pushed account health and campaigns further down the screen. */}
+        <Card
+          title="Waiting on you"
+          action={
+            <Pressable
+              onPress={() => router.push('/(tabs)/inbox')}
+              accessibilityRole="link"
+              accessibilityLabel={
+                data.waiting.length > WAITING_PREVIEW
+                  ? `Inbox, ${data.waiting.length} waiting`
+                  : 'Inbox'
+              }
+              hitSlop={space.sm}
+              style={({ pressed }) => [styles.cardAction, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Text style={[type.footnote, { color: colors.blue, fontWeight: '600' }]}>Inbox</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.blue} accessible={false} />
+            </Pressable>
+          }
+        >
           {data.waiting.length === 0 ? (
             <Text style={[type.footnote, { color: colors.label2 }]}>
               You&apos;re all caught up.
             </Text>
           ) : (
             <View style={{ gap: space.sm }}>
-              {data.waiting.slice(0, 5).map((thread) => (
+              {data.waiting.slice(0, WAITING_PREVIEW).map((thread) => (
                 <Pressable
                   key={thread.contact}
                   accessibilityRole="button"
@@ -237,12 +271,18 @@ export default function HomeScreen() {
                     <Text style={[type.body, { color: colors.label }]} numberOfLines={1}>
                       {threadTitle(thread.display_name, thread.phone_number)}
                     </Text>
-                    <Text style={[type.caption, { color: colors.label2 }]} numberOfLines={1}>
-                      {thread.last_text ?? 'No messages yet'}
+                    {/* emojiSafe because this is what the contact sent, and
+                        caption is the tightest line height in the ramp, which
+                        crops an emoji on Android. See src/theme/tokens.ts. */}
+                    <Text
+                      style={[emojiSafe(type.caption), { color: colors.label2 }]}
+                      numberOfLines={1}
+                    >
+                      {thread.last_text || (thread.last_at ? 'Attachment' : 'No messages yet')}
                     </Text>
                   </View>
                   <Text style={[type.caption, { color: colors.label2, marginLeft: space.sm }]}>
-                    {shortTime(thread.last_at)}
+                    {listTime(thread.last_at)}
                   </Text>
                 </Pressable>
               ))}
@@ -250,6 +290,15 @@ export default function HomeScreen() {
           )}
         </Card>
 
+      {/* Campaigns, for a platform admin only. The same gate as the tab and as
+          the web's Home, where `showCampaigns = !customer`: a customer who
+          cannot open the Campaigns screen should not be shown a card of
+          campaign progress they can do nothing with.
+
+          TEMPORARY: hidden from platform admins too, so Home ends at Waiting
+          on you, the same way Campaigns is out of the tab bar. Set
+          SHOW_CAMPAIGNS back to true to restore it. */}
+      {SHOW_CAMPAIGNS && isPlatformAdmin ? (
         <Card title="Campaigns">
           {data.campaigns.length === 0 ? (
             <Text style={[type.footnote, { color: colors.label2 }]}>
@@ -283,6 +332,7 @@ export default function HomeScreen() {
             </View>
           )}
         </Card>
+      ) : null}
       </ScrollView>
     </Screen>
   );
@@ -392,6 +442,7 @@ const styles = StyleSheet.create({
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   tile: { flexGrow: 1, flexBasis: '45%', borderWidth: StyleSheet.hairlineWidth },
+  cardAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 32 },
   step: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.6, marginTop: 2 },
 });
